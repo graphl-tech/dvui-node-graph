@@ -8,7 +8,7 @@ Requires zig 0.16 and the dvui fork pinned in `build.zig.zon`.
 
 ```sh
 zig build demo          # interactive SDL3 demo
-zig build test          # headless interaction tests
+zig build test          # unit tests + headless interaction tests
 zig build test-images   # same tests on SDL3, writes PNGs to snapshots/images
 ```
 
@@ -54,7 +54,7 @@ graph.baseNode(@src(), 1, struct { x: i32 }{ .x = 5 }, struct { s: []const u8 }{
 _ = graph.link(1, .output(0), 2, .input(0)); // node 1's first output -> node 2's first input
 
 for (graph.events()) |e| switch (e) {
-    .link_created => {}, // wire released on a compatible socket
+    .link_created => {}, // wire released on a compatible socket (opposite sides: output -> input)
     .link_dropped => {}, // wire released on empty canvas, `.point` is graph space
     .link_clicked => {},
     .nodes_moved => {}, // `.nodes` moved by `.delta`
@@ -74,14 +74,22 @@ its own event union: `BaseInput.Event.socket` carries a `BaseSocket.Event`, whic
 `.mouse` and `.wire`. `BaseSocket` can also be used directly.
 
 The library never owns your graph. It reports what the user did (`link_created`,
-`nodes_moved`, ...) and you decide what to change and redeclare next frame. Node positions,
-the view and the selection persist in dvui's data store under the graph's id. To keep a node
-position yourself, pass `.position = &my_point` in `BaseNode.InitOptions`; to keep the view,
-pass `.view = &my_view` in `GraphWidget.InitOptions`.
+`nodes_moved`, ...) and you decide what to change and redeclare next frame. Unless you pass your
+own (see below), node positions, the view and the selection persist in dvui's data store under
+the graph's id. dvui frees entries that go a frame without use, so a library-owned node position
+is forgotten if that node isn't declared for a frame; pass `.position` if nodes come and go.
+
+Node positions are graph-space top-left corners. While nodes are dragged, every selected node
+moves by the same `GraphWidget.node_drag_delta` each frame, written through its position; the
+drag ends with one `nodes_moved` event carrying the total delta. Set `apply_drag = false` on a
+node to apply the delta yourself.
 
 A node's inputs and outputs are each an `ng.Ports`, stored as a struct of arrays: `names`,
 plus optional `sockets`, `values`, `type_names`, `kinds` and `colors` columns. Leave a column
-empty to use its default for every port. Ports can come from a struct value (field names, type
+empty to use its default for every port. The library has no notion of value types: map your
+types to `colors` (sockets default to the theme's control text color, and
+`BaseSocket.InitOptions.color` overrides per socket). `type_names` is informational only;
+nothing in the library draws it. Ports can come from a struct value (field names, type
 names and formatted literals) or be built by hand for runtime-defined nodes. Port widgets take
 an index into these columns. `sockets` maps a port to a `Socket` when sockets are not simply
 numbered by position, and `kinds` picks `.value`, `.flow` (arrow) or `.plus` (create-on-use
@@ -129,7 +137,15 @@ These exist for apps like the graphl IDE that keep their own graph model:
   `socketCenter`, `nodeRect` and `lastFrameSocket` expose geometry for your own overlays and hit
   tests (e.g. dropping a node onto an edge to splice it in).
 
-Ctrl/cmd-drag on empty canvas adds nodes to the selection; shift-drag removes them.
+## Input
+
+- drag empty canvas: pan; mouse wheel: zoom around the cursor
+- ctrl/cmd-drag on empty canvas: add nodes to the selection; shift-drag: remove them
+- click a node: select it (ctrl/cmd adds, shift removes); drag it: move the selection
+- drag from a socket: wire; click a socket: `socket_clicked`; click an edge: `link_clicked`
+- right click: `context_menu` for the canvas, node or socket under the mouse
+- with the canvas focused: delete/backspace emits `delete_selection`, escape clears the
+  selection, ctrl/cmd+A selects all
 
 ## Event lifetimes
 
