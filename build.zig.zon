@@ -1,0 +1,19 @@
+.{
+    .name = .dvui_node_graph,
+    .version = "0.1.0",
+    .minimum_zig_version = "0.16.0",
+    .fingerprint = 0x73e942e36786e6c,
+    .dependencies = .{
+        .dvui = .{
+            .url = "git+https://github.com/MichaelBelousov/dvui#899d22e91e042f584487dcdc4462d33f4c335436",
+            .hash = "dvui-0.5.0-dev-AQFJmXMZ_AAko6PxA5h_nEtSOCURkSmCKdil9mQYaO0H",
+        },
+    },
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+        "examples",
+        "README.md",
+    },
+}
