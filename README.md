@@ -16,14 +16,19 @@ zig build test-images   # same tests on SDL3, writes PNGs to snapshots/images
 ```zig
 const ng = @import("dvui_node_graph");
 
+// node positions live in your model; dragging a node writes through its pointer
+const model = struct {
+    var positions = [_]dvui.Point{ .{ .x = 20, .y = 40 }, .{ .x = 260, .y = 140 } };
+};
+
 var graph = ng.graph(@src(), .{}, .{});
 defer graph.deinit();
 
 // a default node
-graph.baseNode(@src(), 1, struct { x: i32 }{ .x = 5 }, struct { s: []const u8 }{ .s = "" });
+graph.baseNode(@src(), 1, &model.positions[0], struct { x: i32 }{ .x = 5 }, struct { s: []const u8 }{ .s = "" });
 
 {
-    var node = graph.node(@src(), 2, struct { s: []const u8 }{ .s = "" }, struct {}{}, .{ .title = "two" }, .{});
+    var node = graph.node(@src(), 2, &model.positions[1], struct { s: []const u8 }{ .s = "" }, struct {}{}, .{ .title = "two" }, .{});
     defer node.deinit();
 
     for (0..node.inputs.len()) |i| {
