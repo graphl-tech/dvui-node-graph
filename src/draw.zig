@@ -6,6 +6,18 @@ const dvui = @import("dvui");
 const Point = dvui.Point.Physical;
 const Rect = dvui.Rect.Physical;
 
+/// dvui's color argument type: `Color`, or `ColorOrGradient` in newer dvui.
+pub const Paint = @FieldType(dvui.Path.StrokeOptions, "color");
+
+pub fn paint(c: dvui.Color) Paint {
+    return if (Paint == dvui.Color) c else Paint.fromColor(c);
+}
+
+/// A flat color from a `Paint` (a gradient's first stop).
+pub fn flat(p: Paint) dvui.Color {
+    return if (Paint == dvui.Color) p else p.toColor();
+}
+
 pub fn rectCenter(r: Rect) Point {
     return .{ .x = r.x + r.w / 2, .y = r.y + r.h / 2 };
 }
@@ -105,14 +117,14 @@ pub fn fillCircle(center: Point, r: f32, color: dvui.Color) void {
     if (r < 0.5) return;
     var b = circle(center, r);
     defer b.deinit();
-    dvui.Path.fillConvex(b.build(), .{ .color = color, .center = center });
+    dvui.Path.fillConvex(b.build(), .{ .color = paint(color), .center = center });
 }
 
 pub fn strokeCircle(center: Point, r: f32, thickness: f32, color: dvui.Color) void {
     if (r < 0.5) return;
     var b = circle(center, r);
     defer b.deinit();
-    dvui.Path.stroke(b.build(), .{ .thickness = thickness, .color = color, .closed = true });
+    dvui.Path.stroke(b.build(), .{ .thickness = thickness, .color = paint(color), .closed = true });
 }
 
 /// Value pin: a ring in `color` over a disk of `background` (so the hole reads as canvas, not
@@ -140,8 +152,8 @@ pub fn flowSocket(r: Rect, filled: bool, color: dvui.Color, background: dvui.Col
     b.addPoint(.{ .x = center.x + s, .y = center.y });
     b.addPoint(.{ .x = center.x - s * 0.6, .y = center.y + s });
     const path = b.build();
-    if (filled) dvui.Path.fillConvex(path, .{ .color = color, .center = center });
-    dvui.Path.stroke(path, .{ .thickness = @max(1, half * 0.2), .color = color, .closed = true });
+    if (filled) dvui.Path.fillConvex(path, .{ .color = paint(color), .center = center });
+    dvui.Path.stroke(path, .{ .thickness = @max(1, half * 0.2), .color = paint(color), .closed = true });
 }
 
 /// Flow pin drawn as a ring around an icon, both faded when not `filled`.
@@ -155,7 +167,7 @@ pub fn iconSocket(r: Rect, filled: bool, color: dvui.Color, background: dvui.Col
     const icon_h = outer * 2 * 0.55;
     const icon_w = dvui.iconWidth(name, tvg, icon_h) catch icon_h;
     const icon_rect: Rect = .{ .x = center.x - icon_w / 2, .y = center.y - icon_h / 2, .w = icon_w, .h = icon_h };
-    dvui.renderIcon(name, tvg, .{ .r = icon_rect, .s = 1 }, .{}, .{ .fill_color = c, .stroke_color = c }) catch {};
+    dvui.renderIcon(name, tvg, .{ .r = icon_rect, .s = 1 }, .{}, .{ .fill_color = paint(c), .stroke_color = paint(c) }) catch {};
 
     const t = @max(0.5, outer * 0.3);
     strokeCircle(center, outer - t / 2, t, c);
@@ -168,8 +180,8 @@ pub fn plusSocket(r: Rect, color: dvui.Color, background: dvui.Color) void {
     const arm = @min(r.w, r.h) * 0.22;
     if (arm < 0.5) return;
     const t = @max(1, arm * 0.45);
-    dvui.Path.stroke(.{ .points = &.{ .{ .x = center.x - arm, .y = center.y }, .{ .x = center.x + arm, .y = center.y } } }, .{ .thickness = t, .color = color });
-    dvui.Path.stroke(.{ .points = &.{ .{ .x = center.x, .y = center.y - arm }, .{ .x = center.x, .y = center.y + arm } } }, .{ .thickness = t, .color = color });
+    dvui.Path.stroke(.{ .points = &.{ .{ .x = center.x - arm, .y = center.y }, .{ .x = center.x + arm, .y = center.y } } }, .{ .thickness = t, .color = paint(color) });
+    dvui.Path.stroke(.{ .points = &.{ .{ .x = center.x, .y = center.y - arm }, .{ .x = center.x, .y = center.y + arm } } }, .{ .thickness = t, .color = paint(color) });
 }
 
 fn smoothstep(t: f32) f32 {
@@ -210,11 +222,11 @@ fn gridLevel(viewport: Rect, data_rs: dvui.RectScale, spacing: f32, color: dvui.
     const max_y = viewport.y + viewport.h;
     var x = first.x;
     while (x < max_x) : (x += step) {
-        dvui.Path.stroke(.{ .points = &.{ .{ .x = x, .y = viewport.y }, .{ .x = x, .y = max_y } } }, .{ .thickness = thickness, .color = color });
+        dvui.Path.stroke(.{ .points = &.{ .{ .x = x, .y = viewport.y }, .{ .x = x, .y = max_y } } }, .{ .thickness = thickness, .color = paint(color) });
     }
     var y = first.y;
     while (y < max_y) : (y += step) {
-        dvui.Path.stroke(.{ .points = &.{ .{ .x = viewport.x, .y = y }, .{ .x = max_x, .y = y } } }, .{ .thickness = thickness, .color = color });
+        dvui.Path.stroke(.{ .points = &.{ .{ .x = viewport.x, .y = y }, .{ .x = max_x, .y = y } } }, .{ .thickness = thickness, .color = paint(color) });
     }
 }
 

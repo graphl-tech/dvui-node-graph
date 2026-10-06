@@ -104,10 +104,25 @@ fn initTest() !dvui.testing {
     return dvui.testing.init(.{ .window_size = .{ .w = 600, .h = 400 }, .snapshot_dir = "snapshots" });
 }
 
+/// In `zig build test-images`, renders the next frame to
+/// `<snapshot_dir>/images/<file>-<test>-<n>.png`. Writes the PNG directly instead of using
+/// `dvui.testing.snapshot`, which does not build on zig 0.16 in upstream dvui yet.
 fn snapshotIfImages(t: *dvui.testing, src: std.builtin.SourceLocation, frame: dvui.App.frameFunction) !void {
     if (!@import("test_options").images) return;
-    try std.Io.Dir.cwd().createDirPath(dvui.io, t.snapshot_dir);
-    try t.snapshot(src, frame);
+    defer t.snapshot_index += 1;
+    const io = dvui.io;
+    const alloc = std.testing.allocator;
+    const dir_path = try std.fmt.allocPrint(alloc, "{s}/images", .{t.snapshot_dir});
+    defer alloc.free(dir_path);
+    try std.Io.Dir.cwd().createDirPath(io, dir_path);
+    const path = try std.fmt.allocPrint(alloc, "{s}/{s}-{s}-{d}.png", .{ dir_path, src.file, src.fn_name, t.snapshot_index });
+    defer alloc.free(path);
+    var file = try std.Io.Dir.cwd().createFile(io, path, .{});
+    defer file.close(io);
+    var buf: [512]u8 = undefined;
+    var writer = file.writer(io, &buf);
+    try dvui.testing.capturePng(frame, null, &writer.interface);
+    try writer.end();
 }
 
 test "imperative graph renders and remembers node positions" {

@@ -7,6 +7,7 @@ const dvui = @import("dvui");
 
 const types = @import("types.zig");
 const GraphWidget = @import("GraphWidget.zig");
+const draw = @import("draw.zig");
 const ports = @import("ports.zig");
 
 const NodeId = types.NodeId;
@@ -124,8 +125,8 @@ pub fn initInPlace(
         .corners = .all(12),
         .background = true,
         .border = .all(1),
-        .color_fill = fill.opacity(0.92),
-        .color_border = border,
+        .color_fill = draw.paint(fill.opacity(0.92)),
+        .color_border = draw.paint(border),
         .min_size_content = .{ .w = 60, .h = 10 },
         .box_shadow = .{ .alpha = 0.25, .fade = 10, .corners = .all(12) },
     };

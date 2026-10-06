@@ -5,8 +5,8 @@
     .fingerprint = 0x73e942e36786e6c,
     .dependencies = .{
         .dvui = .{
-            .url = "git+https://github.com/MichaelBelousov/dvui#899d22e91e042f584487dcdc4462d33f4c335436",
-            .hash = "dvui-0.5.0-dev-AQFJmXMZ_AAko6PxA5h_nEtSOCURkSmCKdil9mQYaO0H",
+            .url = "git+https://github.com/david-vanderson/dvui#9b372ab0e3beca5060eb1f9ffe3e83ee61665e37",
+            .hash = "dvui-0.5.0-dev-AQFJmRbtAwHyeIDl5laSSUlHNC1I_TXiwitJOowF6z-n",
         },
     },
     .paths = .{

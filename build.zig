@@ -71,7 +71,6 @@ pub fn build(b: *std.Build) void {
             .target = target,
             .optimize = optimize,
             .backend = .sdl3,
-            .@"snapshot-images" = "current",
         });
         const tests = b.addTest(.{
             .name = "dvui-node-graph-test-images",

@@ -226,14 +226,14 @@ pub fn init(src: std.builtin.SourceLocation, init_opts: InitOptions, opts: dvui.
 
 /// It's expected to call this when `self` is `undefined`.
 pub fn initInPlace(self: *GraphWidget, src: std.builtin.SourceLocation, init_opts: InitOptions, opts: dvui.Options) void {
-    const options = defaults.override(.{ .color_fill = dvui.themeGet().color(.content, .fill) }).override(opts);
+    const options = defaults.override(.{ .color_fill = draw.paint(dvui.themeGet().color(.content, .fill)) }).override(opts);
     self.* = .{
         .init_opts = init_opts,
         .box = undefined,
         .state = undefined,
         .view = undefined,
         .canvas_rect = undefined,
-        .canvas_fill = options.color(.fill),
+        .canvas_fill = draw.flat(options.color(.fill)),
         .prev_sockets = &.{},
         .prev_nodes = &.{},
         .prev_connected = &.{},
@@ -527,15 +527,15 @@ pub fn linkEdge(self: *GraphWidget, edge: Edge, opts: LinkOptions) LinkResult {
     const theme = dvui.themeGet();
     const base = opts.color orelse theme.color(.control, .text);
     if (result.hovered) {
-        draw.strokeDashed(pts, 14, 8.75, .{ .thickness = thickness + 2, .color = opts.hover_color orelse theme.color(.highlight, .fill) });
+        draw.strokeDashed(pts, 14, 8.75, .{ .thickness = thickness + 2, .color = draw.paint(opts.hover_color orelse theme.color(.highlight, .fill)) });
     } else {
         const shadow = arena().alloc(Physical, pts.len) catch return result;
         for (pts, shadow) |p, *s| s.* = p.plus(.{ .y = 3 * self.data_rs.s });
-        dvui.Path.stroke(.{ .points = shadow }, .{ .thickness = thickness, .color = dvui.Color.black.opacity(0.3) });
+        dvui.Path.stroke(.{ .points = shadow }, .{ .thickness = thickness, .color = draw.paint(dvui.Color.black.opacity(0.3)) });
         if (opts.dashed) {
-            draw.strokeDashed(pts, 14, 8.75, .{ .thickness = thickness, .color = base });
+            draw.strokeDashed(pts, 14, 8.75, .{ .thickness = thickness, .color = draw.paint(base) });
         } else {
-            dvui.Path.stroke(.{ .points = pts }, .{ .thickness = thickness, .color = base });
+            dvui.Path.stroke(.{ .points = pts }, .{ .thickness = thickness, .color = draw.paint(base) });
         }
     }
     return result;
@@ -962,7 +962,7 @@ fn drawOverlays(self: *GraphWidget) void {
         const pts = draw.edgePoints(arena(), start, src_dir, end, end_dir) catch break :wire;
         const alpha: f32 = if (target_center != null) 1.0 else 0.6;
         const thickness = @max(2, 1.5 * self.data_rs.s);
-        draw.strokeDashed(pts, 14, 8.75, .{ .thickness = thickness, .color = theme.color(.control, .text).opacity(alpha), .after = true });
+        draw.strokeDashed(pts, 14, 8.75, .{ .thickness = thickness, .color = draw.paint(theme.color(.control, .text).opacity(alpha)), .after = true });
         dvui.cursorSet(.crosshair);
     }
 
@@ -979,9 +979,9 @@ fn drawOverlays(self: *GraphWidget) void {
             const path = b.build();
             const cw = dvui.currentWindow();
             if (path.dupe(cw.arena())) |p| {
-                cw.addRenderCommand(.{ .pathFillConvex = .{ .path = p, .opts = .{ .color = fill } } }, true);
+                cw.addRenderCommand(.{ .pathFillConvex = .{ .path = p, .opts = .{ .color = draw.paint(fill) } } }, true);
             } else |_| {}
-            dvui.Path.stroke(path, .{ .thickness = 1, .color = theme.color(.control, .text), .closed = true, .after = true });
+            dvui.Path.stroke(path, .{ .thickness = 1, .color = draw.paint(theme.color(.control, .text)), .closed = true, .after = true });
         }
     }
 

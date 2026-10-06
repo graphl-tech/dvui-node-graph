@@ -8,6 +8,7 @@ const dvui = @import("dvui");
 const types = @import("types.zig");
 const BaseNode = @import("BaseNode.zig");
 const BaseSocket = @import("BaseSocket.zig");
+const draw = @import("draw.zig");
 
 pub const BaseInput = PortWidget(.input);
 pub const BaseOutput = PortWidget(.output);
@@ -98,7 +99,7 @@ pub fn PortWidget(comptime side: types.Side) type {
                             .font = font,
                             .gravity_y = 0.5,
                             .padding = .all(2),
-                            .color_text = dvui.themeGet().color(.control, .text).opacity(0.6),
+                            .color_text = draw.paint(dvui.themeGet().color(.control, .text).opacity(0.6)),
                         });
                     }
                 }
