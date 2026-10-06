@@ -27,7 +27,7 @@ pub const Node = struct {
     title: ?[]const u8 = null,
     inputs: Ports = .none(.input),
     outputs: Ports = .none(.output),
-    /// Initial position; afterwards the graph remembers where the user dragged it.
+    /// Initial position; afterwards `graph` remembers where the user dragged it.
     position: dvui.Point = .{},
 };
 
@@ -70,13 +70,20 @@ pub fn Spec(comptime Ctx: type) type {
     };
 }
 
+/// Dragged position of `desc`, kept in dvui's data store under the graph. dvui frees entries
+/// that go a frame without use, so a node left out for a frame comes back at `desc.position`.
+fn positionPtr(g: *GraphWidget, desc: Node) *dvui.Point {
+    const key = g.id().update(std.mem.asBytes(&desc.id));
+    return dvui.dataGetPtrDefault(null, key, "_pos", dvui.Point, desc.position);
+}
+
 /// Render a whole graph from `spec`. Returns this frame's graph events (arena memory).
 pub fn graph(src: std.builtin.SourceLocation, ctx: anytype, spec: Spec(@TypeOf(ctx)), opts: dvui.Options) []const GraphWidget.Event {
     var g = GraphWidget.init(src, spec.graph, opts);
     defer g.deinit();
 
     for (spec.nodes) |desc| {
-        var n = BaseNode.init(@src(), g, desc.id, desc.inputs, desc.outputs, .{ .default_position = desc.position }, .{});
+        var n = BaseNode.init(@src(), g, desc.id, positionPtr(g, desc), desc.inputs, desc.outputs, .{}, .{});
         defer n.deinit();
 
         if (spec.draw_node_title) |f| f(ctx, n, desc) else if (desc.title) |t| n.titleLabel("{s}", .{t});

@@ -30,7 +30,7 @@ const Node = struct {
     id: ng.NodeId,
     kind: Kind,
     value: f32 = 0,
-    initial_position: dvui.Point,
+    position: dvui.Point,
 };
 
 var nodes: std.ArrayList(Node) = .empty;
@@ -41,7 +41,7 @@ var use_declarative = false;
 fn addNode(kind: Kind, p: dvui.Point) !ng.NodeId {
     const id = next_id;
     next_id += 1;
-    try nodes.append(gpa, .{ .id = id, .kind = kind, .initial_position = p });
+    try nodes.append(gpa, .{ .id = id, .kind = kind, .position = p });
     return id;
 }
 
@@ -113,9 +113,8 @@ fn imperativeGraph() !void {
     defer graph.deinit();
 
     for (nodes.items) |*n| {
-        var node = graph.node(@src(), n.id, inputsOf(n.kind), outputsOf(n.kind), .{
+        var node = graph.node(@src(), n.id, &n.position, inputsOf(n.kind), outputsOf(n.kind), .{
             .title = @tagName(n.kind),
-            .default_position = n.initial_position,
         }, .{});
         defer node.deinit();
 
@@ -200,7 +199,7 @@ fn declarativeGraph() !void {
         .title = @tagName(n.kind),
         .inputs = inputsOf(n.kind),
         .outputs = outputsOf(n.kind),
-        .position = n.initial_position,
+        .position = n.position,
     };
     _ = ng.declarative.graph(@src(), Ctx{}, .{
         .nodes = decl_nodes,

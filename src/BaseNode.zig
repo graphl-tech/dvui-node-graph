@@ -20,10 +20,6 @@ pub const body_inset: f32 = 5;
 
 pub const InitOptions = struct {
     title: ?[]const u8 = null,
-    /// Caller-owned position in graph space. When null the graph stores it.
-    position: ?*dvui.Point = null,
-    /// Initial position when the graph stores it.
-    default_position: dvui.Point = .{},
     draggable: bool = true,
     selectable: bool = true,
     /// Apply this frame's drag delta to the position. Turn off to apply moves yourself from
@@ -47,10 +43,13 @@ body: dvui.BoxWidget = undefined,
 column: dvui.BoxWidget = undefined,
 column_side: ?types.Side = null,
 
+/// `position` is the node's top-left corner in graph space. It must outlive the frame: dragging
+/// the node writes through it.
 pub fn init(
     src: std.builtin.SourceLocation,
     graph: *GraphWidget,
     id: NodeId,
+    position: *dvui.Point,
     inputs: anytype,
     outputs: anytype,
     init_opts: InitOptions,
@@ -62,6 +61,7 @@ pub fn init(
         src,
         graph,
         id,
+        position,
         types.ports(arena, .input, inputs) catch .none(.input),
         types.ports(arena, .output, outputs) catch .none(.output),
         init_opts,
@@ -76,6 +76,7 @@ pub fn initInPlace(
     src: std.builtin.SourceLocation,
     graph: *GraphWidget,
     id: NodeId,
+    position: *dvui.Point,
     inputs: Ports,
     outputs: Ports,
     init_opts: InitOptions,
@@ -88,7 +89,7 @@ pub fn initInPlace(
         .inputs = inputs,
         .outputs = outputs,
         .init_opts = init_opts,
-        .position = init_opts.position orelse graph.nodePositionPtr(id, init_opts.default_position),
+        .position = position,
         .selected = graph.isSelected(id),
         .hovered = if (graph.hover_node) |h| h == id else false,
     };

@@ -15,7 +15,9 @@ const Fixture = struct {
     edges: std.ArrayList(ng.Edge) = .empty,
     events: std.ArrayList(ng.GraphWidget.Event) = .empty,
     socket_events: std.ArrayList(struct { socket: ng.SocketId, event: ng.BaseSocket.Event }) = .empty,
+    node1_pos: dvui.Point = .{ .x = 20, .y = 40 },
     node2_pos: dvui.Point = .{ .x = 260, .y = 140 },
+    node3_pos: dvui.Point = .{ .x = 20, .y = 220 },
     allow_same_side_links: bool = false,
     /// Copy of the last `nodes_moved` node list (event slices only live for one frame).
     moved_nodes: std.ArrayList(ng.NodeId) = .empty,
@@ -42,9 +44,8 @@ fn imperativeFrame() anyerror!dvui.App.Result {
     defer graph.deinit();
 
     {
-        var node = graph.node(@src(), 1, struct { x: i32 }{ .x = 5 }, struct { s: []const u8 }{ .s = "" }, .{
+        var node = graph.node(@src(), 1, &fx.node1_pos, struct { x: i32 }{ .x = 5 }, struct { s: []const u8 }{ .s = "" }, .{
             .title = "one",
-            .default_position = .{ .x = 20, .y = 40 },
         }, .{ .tag = "node-1" });
         defer node.deinit();
         for (0..node.inputs.len()) |i| node.baseInput(@src(), i, .{ .id_extra = i });
@@ -55,15 +56,13 @@ fn imperativeFrame() anyerror!dvui.App.Result {
         }
     }
 
-    graph.baseNodeEx(@src(), 3, struct { a: bool, b: f32 }{ .a = true, .b = 1.5 }, struct { c: u8 }{ .c = 0 }, .{
+    graph.baseNodeEx(@src(), 3, &fx.node3_pos, struct { a: bool, b: f32 }{ .a = true, .b = 1.5 }, struct { c: u8 }{ .c = 0 }, .{
         .title = "three",
-        .default_position = .{ .x = 20, .y = 220 },
     }, .{ .tag = "node-3" });
 
     {
-        var node = graph.node(@src(), 2, struct { s: []const u8 }{ .s = "" }, struct { out: f32 }{ .out = 0 }, .{
+        var node = graph.node(@src(), 2, &fx.node2_pos, struct { s: []const u8 }{ .s = "" }, struct { out: f32 }{ .out = 0 }, .{
             .title = "two",
-            .position = &fx.node2_pos,
         }, .{ .tag = "node-2" });
         defer node.deinit();
 
@@ -321,20 +320,26 @@ test "declarative graph renders nodes, edges and custom labels" {
 
 /// Verbatim copy of the README's imperative example, kept compiling.
 fn readmeFrame() anyerror!dvui.App.Result {
+
+    // node positions live in your model; dragging a node writes through its pointer
+    const model = struct {
+        var positions = [_]dvui.Point{ .{ .x = 20, .y = 40 }, .{ .x = 260, .y = 140 } };
+    };
+
     var graph = ng.graph(@src(), .{}, .{});
     defer graph.deinit();
 
-    // a node with default port rows
-    graph.baseNode(@src(), 1, struct { x: i32 }{ .x = 5 }, struct { s: []const u8 }{ .s = "" });
+    // a default node
+    graph.baseNode(@src(), 1, &model.positions[0], struct { x: i32 }{ .x = 5 }, struct { s: []const u8 }{ .s = "" });
 
     {
-        var node = graph.node(@src(), 2, struct { s: []const u8 }{ .s = "" }, struct {}{}, .{ .title = "two" }, .{});
+        var node = graph.node(@src(), 2, &model.positions[1], struct { s: []const u8 }{ .s = "" }, struct {}{}, .{ .title = "two" }, .{});
         defer node.deinit();
 
         for (0..node.inputs.len()) |i| {
             var row = ng.BaseInput.init(@src(), node, i, .{ .id_extra = i });
             defer row.deinit();
-            // anything drawn here lands beside the socket
+            // anything drawn here lands next to the socket
             dvui.label(@src(), "{s}", .{row.name()}, .{});
 
             for (row.events()) |e| switch (e) {
@@ -358,7 +363,7 @@ fn readmeFrame() anyerror!dvui.App.Result {
     _ = graph.link(1, .output(0), 2, .input(0)); // node 1's first output -> node 2's first input
 
     for (graph.events()) |e| switch (e) {
-        .link_created => {}, // wire released on a compatible socket
+        .link_created => {}, // wire released on a compatible socket (opposite sides: output -> input)
         .link_dropped => {}, // wire released on empty canvas, `.point` is graph space
         .link_clicked => {},
         .nodes_moved => {}, // `.nodes` moved by `.delta`
@@ -399,14 +404,15 @@ const PlusFixture = struct {
     }
     const vtable: ng.GraphWidget.Selection.VTable = .{ .isSelected = isSelected, .setSelected = setSelected, .clear = clear, .list = list };
     var dummy: u8 = 0;
+    var positions = [_]dvui.Point{ .{ .x = 20, .y = 40 }, .{ .x = 260, .y = 140 } };
 
     fn frame() anyerror!dvui.App.Result {
         var graph = ng.graph(@src(), .{ .selection = .{ .ctx = &dummy, .vtable = &vtable } }, .{});
         defer graph.deinit();
 
-        graph.baseNodeEx(@src(), 1, struct {}{}, struct { out: i32 }{ .out = 0 }, .{ .default_position = .{ .x = 20, .y = 40 } }, .{ .tag = "pn-1" });
+        graph.baseNodeEx(@src(), 1, &positions[0], struct {}{}, struct { out: i32 }{ .out = 0 }, .{}, .{ .tag = "pn-1" });
         {
-            var node = graph.node(@src(), 2, struct { a: i32 }{ .a = 0 }, struct {}{}, .{ .default_position = .{ .x = 260, .y = 140 } }, .{ .tag = "pn-2" });
+            var node = graph.node(@src(), 2, &positions[1], struct { a: i32 }{ .a = 0 }, struct {}{}, .{}, .{ .tag = "pn-2" });
             defer node.deinit();
             node.baseInput(@src(), 0, .{});
             // floats left of the card, not part of the layout

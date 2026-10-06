@@ -7,9 +7,9 @@
 //!   4. optionally read `events()`
 //!   5. `deinit`
 //!
-//! Node positions, the view transform and the selection persist in dvui's data store keyed by
-//! this widget's id, so the caller only has to supply stable `NodeId`s. Callers can own any of
-//! them instead: `BaseNode.InitOptions.position`, `InitOptions.view`, `InitOptions.selection`.
+//! Each node's position is passed in by pointer. The view transform and the selection persist in
+//! dvui's data store keyed by this widget's id unless the caller owns them
+//! (`InitOptions.view`, `InitOptions.selection`).
 //!
 //! Wire drags belong to the graph rather than to a socket widget: pressing a socket captures the
 //! mouse to the canvas, so the drag survives the pressed widget disappearing (see
@@ -441,19 +441,20 @@ fn queueSocketEvent(self: *GraphWidget, s: SocketId, e: BaseSocket.Event) void {
 // Declaring nodes and edges
 // ---------------------------------------------------------------------------------------------
 
-/// Begin a node whose ports are derived from `inputs`/`outputs` (struct values or `Ports`).
-/// The caller lays out its ports (see `BaseInput`/`BaseOutput`) and must `deinit` it.
-pub fn node(self: *GraphWidget, src: std.builtin.SourceLocation, node_id: NodeId, inputs: anytype, outputs: anytype, init_opts: BaseNode.InitOptions, opts: dvui.Options) *BaseNode {
-    return BaseNode.init(src, self, node_id, inputs, outputs, init_opts, opts);
+/// Begin a node at `position` (graph space, written by drags) whose ports are derived from
+/// `inputs`/`outputs` (struct values or `Ports`). The caller lays out its ports (see
+/// `BaseInput`/`BaseOutput`) and must `deinit` it.
+pub fn node(self: *GraphWidget, src: std.builtin.SourceLocation, node_id: NodeId, position: *dvui.Point, inputs: anytype, outputs: anytype, init_opts: BaseNode.InitOptions, opts: dvui.Options) *BaseNode {
+    return BaseNode.init(src, self, node_id, position, inputs, outputs, init_opts, opts);
 }
 
 /// Render a complete node with default port widgets.
-pub fn baseNode(self: *GraphWidget, src: std.builtin.SourceLocation, node_id: NodeId, inputs: anytype, outputs: anytype) void {
-    self.baseNodeEx(src, node_id, inputs, outputs, .{}, .{});
+pub fn baseNode(self: *GraphWidget, src: std.builtin.SourceLocation, node_id: NodeId, position: *dvui.Point, inputs: anytype, outputs: anytype) void {
+    self.baseNodeEx(src, node_id, position, inputs, outputs, .{}, .{});
 }
 
-pub fn baseNodeEx(self: *GraphWidget, src: std.builtin.SourceLocation, node_id: NodeId, inputs: anytype, outputs: anytype, init_opts: BaseNode.InitOptions, opts: dvui.Options) void {
-    var n = BaseNode.init(src, self, node_id, inputs, outputs, init_opts, opts);
+pub fn baseNodeEx(self: *GraphWidget, src: std.builtin.SourceLocation, node_id: NodeId, position: *dvui.Point, inputs: anytype, outputs: anytype, init_opts: BaseNode.InitOptions, opts: dvui.Options) void {
+    var n = BaseNode.init(src, self, node_id, position, inputs, outputs, init_opts, opts);
     defer n.deinit();
     n.defaultPorts();
 }
@@ -641,23 +642,6 @@ pub fn assertCanDeclare(self: *const GraphWidget) void {
 // ---------------------------------------------------------------------------------------------
 // Interfaces used by BaseNode / BaseSocket
 // ---------------------------------------------------------------------------------------------
-
-fn nodeKeyId(self: *GraphWidget, node_id: NodeId) dvui.Id {
-    return self.id().update(std.mem.asBytes(&node_id));
-}
-
-/// Pointer to the stored position (graph space) of a node, created at `default` if missing.
-pub fn nodePositionPtr(self: *GraphWidget, node_id: NodeId, default: dvui.Point) *dvui.Point {
-    return dvui.dataGetPtrDefault(null, self.nodeKeyId(node_id), "_pos", dvui.Point, default);
-}
-
-pub fn nodePosition(self: *GraphWidget, node_id: NodeId) ?dvui.Point {
-    return dvui.dataGet(null, self.nodeKeyId(node_id), "_pos", dvui.Point);
-}
-
-pub fn setNodePosition(self: *GraphWidget, node_id: NodeId, p: dvui.Point) void {
-    dvui.dataSet(null, self.nodeKeyId(node_id), "_pos", p);
-}
 
 pub fn registerNode(self: *GraphWidget, node_id: NodeId, border_rect: dvui.Rect.Physical) void {
     self.nodes.append(arena(), .{ .id = node_id, .rect = self.data_rs.rectFromPhysical(border_rect) }) catch {};
