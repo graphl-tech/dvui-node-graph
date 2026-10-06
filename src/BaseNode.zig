@@ -80,6 +80,7 @@ pub fn initInPlace(
     init_opts: InitOptions,
     opts: dvui.Options,
 ) void {
+    graph.assertCanDeclare();
     self.* = .{
         .graph = graph,
         .id = id,

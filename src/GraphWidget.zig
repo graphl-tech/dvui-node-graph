@@ -16,6 +16,7 @@
 //! `BaseSocket.InitOptions.wire_source`).
 
 const std = @import("std");
+const builtin = @import("builtin");
 const dvui = @import("dvui");
 
 const types = @import("types.zig");
@@ -201,6 +202,8 @@ wire_target: ?SocketId = null,
 node_drag_delta: dvui.Point = .{},
 
 canvas_events_done: bool = false,
+/// Set by `events()`. Declaring nodes or links afterwards would miss their events this frame.
+events_called: bool = false,
 prev_clip: dvui.Rect.Physical = undefined,
 prev_rendering: bool = undefined,
 prev_snap: bool = undefined,
@@ -487,6 +490,7 @@ pub fn linkEx(self: *GraphWidget, source_node: NodeId, source_socket: Socket, ta
 }
 
 pub fn linkEdge(self: *GraphWidget, edge: Edge, opts: LinkOptions) LinkResult {
+    self.assertCanDeclare();
     self.connected.append(arena(), edge.source) catch {};
     self.connected.append(arena(), edge.target) catch {};
     if (opts.hidden) return .{};
@@ -620,8 +624,16 @@ pub fn pushEvent(self: *GraphWidget, e: Event) void {
 /// Events produced so far this frame. Processes canvas-level input (panning, zoom, selection,
 /// context menus), so call it after all nodes and edges are declared.
 pub fn events(self: *GraphWidget) []const Event {
+    self.events_called = true;
     self.processCanvasEvents();
     return self.events_list.items;
+}
+
+/// Debug builds panic when a node or link is declared after `events()` this frame.
+pub fn assertCanDeclare(self: *const GraphWidget) void {
+    if (builtin.mode == .Debug and self.events_called) {
+        @panic("can't draw new nodes or links after graph.events() or some events may be missed");
+    }
 }
 
 // ---------------------------------------------------------------------------------------------

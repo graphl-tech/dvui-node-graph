@@ -147,6 +147,12 @@ These exist for apps like the graphl IDE that keep their own graph model:
 - with the canvas focused: delete/backspace emits `delete_selection`, escape clears the
   selection, ctrl/cmd+A selects all
 
+## Frame order
+
+Declare every node and link before calling `graph.events()`: events are collected while widgets
+are declared, so anything declared later could miss its events that frame. Debug builds panic
+if a node or link is declared after `events()`.
+
 ## Event lifetimes
 
 Event payloads that contain slices (`nodes_moved.nodes`) point into the dvui frame arena. Copy
