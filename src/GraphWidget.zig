@@ -80,6 +80,8 @@ pub const InitOptions = struct {
     socket_proximity: f32 = 40,
     /// Socket scale when the mouse is far away.
     socket_rest_scale: f32 = 0.5,
+    /// Look of `.flow` sockets unless a socket overrides it.
+    flow_style: types.FlowStyle = .triangle,
 };
 
 pub const ContextTarget = union(enum) {

@@ -30,6 +30,8 @@ pub const InitOptions = struct {
     wire_source: ?SocketId = null,
     /// Proximity scale override in [0, 1]; null uses the graph's proximity animation.
     scale: ?f32 = null,
+    /// Look of a `.flow` socket; null uses `GraphWidget.InitOptions.flow_style`.
+    flow_style: ?types.FlowStyle = null,
 };
 
 pub const Click = struct {
@@ -181,7 +183,10 @@ fn drawSocket(self: *BaseSocket, slot: dvui.Rect.Physical) void {
     const filled = self.init_opts.filled orelse self.graph.isConnected(self.socket);
     switch (self.init_opts.kind) {
         .value => draw.valueSocket(r, filled, color, self.graph.canvas_fill),
-        .flow => draw.flowSocket(r, filled, color, self.graph.canvas_fill),
+        .flow => switch (self.init_opts.flow_style orelse self.graph.init_opts.flow_style) {
+            .triangle => draw.flowSocket(r, filled, color, self.graph.canvas_fill),
+            .icon => |icon| draw.iconSocket(r, filled, color, self.graph.canvas_fill, icon.name, icon.tvg),
+        },
         .plus => draw.plusSocket(r, color, self.graph.canvas_fill),
     }
 }

@@ -144,6 +144,23 @@ pub fn flowSocket(r: Rect, filled: bool, color: dvui.Color, background: dvui.Col
     dvui.Path.stroke(path, .{ .thickness = @max(1, half * 0.2), .color = color, .closed = true });
 }
 
+/// Flow pin drawn as a ring around an icon, both faded when not `filled`.
+pub fn iconSocket(r: Rect, filled: bool, color: dvui.Color, background: dvui.Color, name: []const u8, tvg: []const u8) void {
+    const center = rectCenter(r);
+    const outer = @min(r.w, r.h) * 0.5;
+    if (outer < 0.5) return;
+    const c = color.opacity(if (filled) 1.0 else 0.33);
+    fillCircle(center, outer, background);
+
+    const icon_h = outer * 2 * 0.55;
+    const icon_w = dvui.iconWidth(name, tvg, icon_h) catch icon_h;
+    const icon_rect: Rect = .{ .x = center.x - icon_w / 2, .y = center.y - icon_h / 2, .w = icon_w, .h = icon_h };
+    dvui.renderIcon(name, tvg, .{ .r = icon_rect, .s = 1 }, .{}, .{ .fill_color = c, .stroke_color = c }) catch {};
+
+    const t = @max(0.5, outer * 0.3);
+    strokeCircle(center, outer - t / 2, t, c);
+}
+
 /// "+" slot: an empty ring with a plus sign inside.
 pub fn plusSocket(r: Rect, color: dvui.Color, background: dvui.Color) void {
     valueSocket(r, false, color, background);

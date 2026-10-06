@@ -15,6 +15,7 @@ pub const Side = types.Side;
 pub const Socket = types.Socket;
 pub const SocketId = types.SocketId;
 pub const SocketKind = types.SocketKind;
+pub const FlowStyle = types.FlowStyle;
 pub const Edge = types.Edge;
 pub const Ports = types.Ports;
 pub const ports = types.ports;

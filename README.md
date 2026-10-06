@@ -129,6 +129,9 @@ These exist for apps like the graphl IDE that keep their own graph model:
 - `BaseNode.InitOptions.position`: own each node's position. Drags write through the pointer and
   report `nodes_moved` (with the delta) once released, ready for an undo stack.
 - `BaseSocket.InitOptions.{filled, color, kind, scale}`: draw state from your model.
+- `GraphWidget.InitOptions.flow_style` (or per socket `BaseSocket.InitOptions.flow_style`):
+  `.flow` sockets are triangles by default, or `.{ .icon = .{ .name, .tvg } }` draws a ring
+  around your own TinyVG icon.
 - `BaseSocket.InitOptions.wire_source` with `.rect` placement: "+" slots that create a socket
   on press and continue the wire from it.
 - `GraphWidget.InitOptions.interactive = false`: draw a graph that ignores input (drag

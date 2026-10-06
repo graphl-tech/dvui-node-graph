@@ -88,6 +88,14 @@ pub const SocketKind = enum {
     plus,
 };
 
+/// How `.flow` sockets are drawn.
+pub const FlowStyle = union(enum) {
+    /// A right-pointing triangle, solid when connected.
+    triangle,
+    /// A ring with an icon (TinyVG bytes) inside, faded when unconnected.
+    icon: struct { name: []const u8, tvg: []const u8 },
+};
+
 /// The inputs or the outputs of one node, as a struct of arrays. `names` sets the port count;
 /// every other column is optional and may be left empty to use its default for all ports.
 pub const Ports = struct {
