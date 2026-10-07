@@ -3,6 +3,8 @@
 const std = @import("std");
 const dvui = @import("dvui");
 
+const Style = @import("Style.zig");
+
 const Point = dvui.Point.Physical;
 const Rect = dvui.Rect.Physical;
 
@@ -36,9 +38,14 @@ pub fn cubicBezierPoint(p0: Point, p1: Point, p2: Point, p3: Point, t: f32) Poin
 /// direction of its `dir` (+1 right, -1 left): +1 for outputs and -1 for inputs gives the usual
 /// "S" curve, and equal directions give the loop used for output -> output edges.
 pub fn edgePoints(alloc: std.mem.Allocator, start: Point, start_dir: f32, end: Point, end_dir: f32) std.mem.Allocator.Error![]Point {
+    return edgePointsCurved(alloc, start, start_dir, end, end_dir, 0.3, 30);
+}
+
+/// `edgePoints` with the tangent length `max(min_tangent, curvature * distance)`.
+pub fn edgePointsCurved(alloc: std.mem.Allocator, start: Point, start_dir: f32, end: Point, end_dir: f32, curvature: f32, min_tangent: f32) std.mem.Allocator.Error![]Point {
     const distance = start.diff(end).length();
     const segments: u32 = std.math.clamp(@as(u32, @intFromFloat(distance / 16)), 1, 32);
-    const offset = @max(30, 0.3 * distance);
+    const offset = @max(min_tangent, curvature * distance);
     const cp1: Point = .{ .x = start.x + start_dir * offset, .y = start.y };
     const cp2: Point = .{ .x = end.x + end_dir * offset, .y = end.y };
 
@@ -129,11 +136,11 @@ pub fn strokeCircle(center: Point, r: f32, thickness: f32, color: dvui.Color) vo
 
 /// Value pin: a ring in `color` over a disk of `background` (so the hole reads as canvas, not
 /// node body), with a filled center when `filled`.
-pub fn valueSocket(r: Rect, filled: bool, color: dvui.Color, background: dvui.Color) void {
+pub fn valueSocket(r: Rect, filled: bool, color: dvui.Color, background: dvui.Color, ring_ratio: f32) void {
     const center = rectCenter(r);
     const outer = @min(r.w, r.h) * 0.5;
     if (outer < 0.5) return;
-    const inner = outer * 0.6;
+    const inner = outer * ring_ratio;
     fillCircle(center, outer, background);
     if (filled) fillCircle(center, inner, color);
     strokeCircle(center, (outer + inner) * 0.5, outer - inner, color);
@@ -157,11 +164,11 @@ pub fn flowSocket(r: Rect, filled: bool, color: dvui.Color, background: dvui.Col
 }
 
 /// Flow pin drawn as a ring around an icon, both faded when not `filled`.
-pub fn iconSocket(r: Rect, filled: bool, color: dvui.Color, background: dvui.Color, name: []const u8, tvg: []const u8) void {
+pub fn iconSocket(r: Rect, filled: bool, color: dvui.Color, background: dvui.Color, name: []const u8, tvg: []const u8, unconnected_opacity: f32) void {
     const center = rectCenter(r);
     const outer = @min(r.w, r.h) * 0.5;
     if (outer < 0.5) return;
-    const c = color.opacity(if (filled) 1.0 else 0.33);
+    const c = color.opacity(if (filled) 1.0 else unconnected_opacity);
     fillCircle(center, outer, background);
 
     const icon_h = outer * 2 * 0.55;
@@ -174,8 +181,8 @@ pub fn iconSocket(r: Rect, filled: bool, color: dvui.Color, background: dvui.Col
 }
 
 /// "+" slot: an empty ring with a plus sign inside.
-pub fn plusSocket(r: Rect, color: dvui.Color, background: dvui.Color) void {
-    valueSocket(r, false, color, background);
+pub fn plusSocket(r: Rect, color: dvui.Color, background: dvui.Color, ring_ratio: f32) void {
+    valueSocket(r, false, color, background, ring_ratio);
     const center = rectCenter(r);
     const arm = @min(r.w, r.h) * 0.22;
     if (arm < 0.5) return;
@@ -191,9 +198,9 @@ fn smoothstep(t: f32) f32 {
 
 /// Multi-level grid aligned to graph space that crossfades between decades while zooming so
 /// line spacing on screen stays roughly constant.
-pub fn grid(viewport: Rect, data_rs: dvui.RectScale, color: dvui.Color) void {
-    const base: f32 = 100.0;
-    const target_px: f32 = 75.0;
+pub fn grid(viewport: Rect, data_rs: dvui.RectScale, style: Style.Grid, color: dvui.Color) void {
+    const base = style.spacing;
+    const target_px = style.target_spacing;
     const zoom_factor = @log10(target_px / (base * data_rs.s));
     const level = @floor(zoom_factor);
     const spacing = base * std.math.pow(f32, 10.0, level);
@@ -201,11 +208,11 @@ pub fn grid(viewport: Rect, data_rs: dvui.RectScale, color: dvui.Color) void {
     const fade_out = 1.0 - smoothstep(t);
     const fade_in = smoothstep(t);
 
-    gridLevel(viewport, data_rs, spacing, color.opacity(0.06 * fade_out), 1.0);
-    gridLevel(viewport, data_rs, spacing * 10, color.opacity(0.19 * fade_out), 1.5);
+    gridLevel(viewport, data_rs, spacing, color.opacity(style.minor_opacity * fade_out), style.minor_thickness);
+    gridLevel(viewport, data_rs, spacing * 10, color.opacity(style.major_opacity * fade_out), style.major_thickness);
     if (t > 0) {
-        gridLevel(viewport, data_rs, spacing * 10, color.opacity(0.06 * fade_in), 1.0);
-        gridLevel(viewport, data_rs, spacing * 100, color.opacity(0.19 * fade_in), 1.5);
+        gridLevel(viewport, data_rs, spacing * 10, color.opacity(style.minor_opacity * fade_in), style.minor_thickness);
+        gridLevel(viewport, data_rs, spacing * 100, color.opacity(style.major_opacity * fade_in), style.major_thickness);
     }
 }
 
@@ -254,7 +261,7 @@ pub fn edgeShadow(r: Rect, side: ShadowSide, thickness: f32, opacity: f32) void 
     b.addRect(band, .{});
     const tris = b.build().fillConvexTriangles(arena, .{ .center = band.center(), .color = .white }) catch return;
 
-    const total = if (dvui.themeGet().dark) opacity else opacity * 0.5;
+    const total = opacity;
     for (tris.vertexes) |*v| {
         const along = switch (side) {
             .top => (v.pos.y - band.y) / band.h,

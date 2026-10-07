@@ -23,6 +23,7 @@ const types = @import("types.zig");
 const draw = @import("draw.zig");
 const BaseNode = @import("BaseNode.zig");
 const BaseSocket = @import("BaseSocket.zig");
+const Style = @import("Style.zig");
 
 const NodeId = types.NodeId;
 const Socket = types.Socket;
@@ -64,8 +65,7 @@ pub const InitOptions = struct {
     selection: ?Selection = null,
     /// False draws the graph without responding to input (e.g. a drag preview).
     interactive: bool = true,
-    grid: bool = true,
-    edge_shadows: bool = true,
+    style: Style = .default,
     pan: bool = true,
     zoom: bool = true,
     /// Ctrl/cmd-drag on empty canvas adds to the selection, shift-drag removes from it.
@@ -74,14 +74,6 @@ pub const InitOptions = struct {
     allow_same_side_links: bool = false,
     min_zoom: f32 = 0.2,
     max_zoom: f32 = 2.0,
-    /// Socket radius in graph units at full proximity scale.
-    socket_radius: f32 = 10,
-    /// Physical-pixel distance at which the nearest socket starts growing toward full size.
-    socket_proximity: f32 = 40,
-    /// Socket scale when the mouse is far away.
-    socket_rest_scale: f32 = 0.5,
-    /// Look of `.flow` sockets unless a socket overrides it.
-    flow_style: types.FlowStyle = .triangle,
 };
 
 pub const ContextTarget = union(enum) {
@@ -214,7 +206,6 @@ pub var defaults: dvui.Options = .{
     .name = "NodeGraph",
     .expand = .both,
     .background = true,
-    .corners = .all(10),
     .min_size_content = .{ .w = 200, .h = 200 },
 };
 
@@ -226,7 +217,11 @@ pub fn init(src: std.builtin.SourceLocation, init_opts: InitOptions, opts: dvui.
 
 /// It's expected to call this when `self` is `undefined`.
 pub fn initInPlace(self: *GraphWidget, src: std.builtin.SourceLocation, init_opts: InitOptions, opts: dvui.Options) void {
-    const options = defaults.override(.{ .color_fill = draw.paint(dvui.themeGet().color(.content, .fill)) }).override(opts);
+    const canvas = init_opts.style.canvas;
+    const options = defaults.override(.{
+        .color_fill = draw.paint(canvas.fill orelse dvui.themeGet().color(.content, .fill)),
+        .corners = .all(canvas.corner_radius),
+    }).override(opts);
     self.* = .{
         .init_opts = init_opts,
         .box = undefined,
@@ -283,7 +278,7 @@ pub fn initInPlace(self: *GraphWidget, src: std.builtin.SourceLocation, init_opt
     self.prev_rendering = dvui.renderingSet(false);
     self.prev_snap = dvui.snapToPixelsSet(false);
 
-    if (init_opts.grid) draw.grid(self.canvas_rect, self.data_rs, dvui.themeGet().color(.control, .text));
+    if (init_opts.style.canvas.grid) |grid| draw.grid(self.canvas_rect, self.data_rs, grid, grid.color orelse Style.text());
 
     if (init_opts.interactive) {
         self.computeHover();
@@ -302,6 +297,10 @@ pub fn data(self: *GraphWidget) *dvui.WidgetData {
 
 pub fn id(self: *GraphWidget) dvui.Id {
     return self.box.data().id;
+}
+
+pub fn style(self: *const GraphWidget) *const Style {
+    return &self.init_opts.style;
 }
 
 pub fn interactive(self: *const GraphWidget) bool {
@@ -460,12 +459,8 @@ pub fn baseNodeEx(self: *GraphWidget, src: std.builtin.SourceLocation, node_id: 
 }
 
 pub const LinkOptions = struct {
-    color: ?dvui.Color = null,
-    /// Color of the dashed stroke shown while hovered. Defaults to the theme highlight.
-    hover_color: ?dvui.Color = null,
-    /// Natural pixels at zoom 1.
-    thickness: f32 = 2,
-    dashed: bool = false,
+    /// Overrides the graph's `style.edge` for this edge.
+    style: ?Style.Edge = null,
     /// Respond to hover and clicks.
     interactive: bool = true,
     /// Skip drawing (still counts as a connection for socket fill).
@@ -502,8 +497,9 @@ pub fn linkEdge(self: *GraphWidget, edge: Edge, opts: LinkOptions) LinkResult {
     const b = self.socketRecord(edge.target) orelse return .{};
     var result: LinkResult = .{ .drawn = true };
 
-    const pts = self.edgePoints(edge) orelse return result;
-    const thickness = opts.thickness * self.data_rs.s;
+    const es = opts.style orelse self.style().edge;
+    const pts = self.edgePointsStyled(edge, es) orelse return result;
+    const thickness = es.thickness * self.data_rs.s;
     const mouse = dvui.currentWindow().mouse_pt;
 
     if (opts.interactive and self.interactive() and self.idle() and self.mouseOverCanvas(mouse) and self.nodeAt(mouse) == null) {
@@ -525,28 +521,38 @@ pub fn linkEdge(self: *GraphWidget, edge: Edge, opts: LinkOptions) LinkResult {
         }
     }
 
-    const theme = dvui.themeGet();
-    const base = opts.color orelse theme.color(.control, .text);
     if (result.hovered) {
-        draw.strokeDashed(pts, 14, 8.75, .{ .thickness = thickness + 2, .color = draw.paint(opts.hover_color orelse theme.color(.highlight, .fill)) });
-    } else {
-        const shadow = arena().alloc(Physical, pts.len) catch return result;
-        for (pts, shadow) |p, *s| s.* = p.plus(.{ .y = 3 * self.data_rs.s });
-        dvui.Path.stroke(.{ .points = shadow }, .{ .thickness = thickness, .color = draw.paint(dvui.Color.black.opacity(0.3)) });
-        if (opts.dashed) {
-            draw.strokeDashed(pts, 14, 8.75, .{ .thickness = thickness, .color = draw.paint(base) });
-        } else {
-            dvui.Path.stroke(.{ .points = pts }, .{ .thickness = thickness, .color = draw.paint(base) });
-        }
+        const hover: dvui.Path.StrokeOptions = .{
+            .thickness = thickness + es.hover_extra_thickness * self.data_rs.s,
+            .color = draw.paint(es.hover_color orelse dvui.themeGet().color(.highlight, .fill)),
+        };
+        if (es.hover_dashed) draw.strokeDashed(pts, es.dash.on, es.dash.off, hover) else dvui.Path.stroke(.{ .points = pts }, hover);
+        return result;
     }
+    if (es.shadow) |sh| {
+        const offset: dvui.Point.Physical = .{ .x = sh.offset.x * self.data_rs.s, .y = sh.offset.y * self.data_rs.s };
+        const shadow = arena().alloc(Physical, pts.len) catch return result;
+        for (pts, shadow) |p, *s| s.* = p.plus(offset);
+        strokeEdge(shadow, es, thickness, sh.color);
+    }
+    strokeEdge(pts, es, thickness, es.color orelse Style.text());
     return result;
+}
+
+fn strokeEdge(pts: []const Physical, es: Style.Edge, thickness: f32, color: dvui.Color) void {
+    const opts: dvui.Path.StrokeOptions = .{ .thickness = thickness, .color = draw.paint(color) };
+    if (es.dashed) draw.strokeDashed(pts, es.dash.on, es.dash.off, opts) else dvui.Path.stroke(.{ .points = pts }, opts);
 }
 
 /// Bezier points (physical) of `edge` this frame, or null if either socket is undeclared.
 pub fn edgePoints(self: *GraphWidget, edge: Edge) ?[]Physical {
+    return self.edgePointsStyled(edge, self.style().edge);
+}
+
+fn edgePointsStyled(self: *GraphWidget, edge: Edge, es: Style.Edge) ?[]Physical {
     const a = self.socketCenter(edge.source) orelse return null;
     const b = self.socketCenter(edge.target) orelse return null;
-    return draw.edgePoints(arena(), a, sideDir(edge.source.side()), b, sideDir(edge.target.side())) catch null;
+    return draw.edgePointsCurved(arena(), a, sideDir(edge.source.side()), b, sideDir(edge.target.side()), es.curvature, es.min_tangent) catch null;
 }
 
 /// Horizontal direction an edge leaves a socket on `side`.
@@ -669,7 +675,7 @@ pub fn isConnected(self: *GraphWidget, s: SocketId) bool {
 /// Proximity scale in [rest, 1] for a socket centered at `center` with full radius `radius`.
 /// Only the socket nearest the mouse last frame grows.
 pub fn socketScale(self: *GraphWidget, s: SocketId) f32 {
-    const rest = self.init_opts.socket_rest_scale;
+    const rest = self.style().socket.rest_scale;
     const nearest = self.nearest_socket orelse return rest;
     if (!nearest.eql(s)) return rest;
     if (self.wireSource()) |src| {
@@ -681,7 +687,7 @@ pub fn socketScale(self: *GraphWidget, s: SocketId) f32 {
     const d = dvui.currentWindow().mouse_pt.diff(rec.center).length();
     if (d <= rec.radius) return 1.0;
     if (dvui.reduce_motion) return rest;
-    const range = self.init_opts.socket_proximity;
+    const range = self.style().socket.proximity;
     const t = std.math.clamp((rec.radius + range - d) / range, 0.0, 1.0);
     return std.math.lerp(rest, 1.0, dvui.easing.inCubic(t));
 }
@@ -943,34 +949,38 @@ fn drawOverlays(self: *GraphWidget) void {
         const src_dir = sideDir(w.source.side());
         // a free end points back toward the source
         const end_dir = if (self.wire_target) |t| sideDir(t.side()) else if (end.x >= start.x) @as(f32, -1) else 1;
-        const pts = draw.edgePoints(arena(), start, src_dir, end, end_dir) catch break :wire;
-        const alpha: f32 = if (target_center != null) 1.0 else 0.6;
-        const thickness = @max(2, 1.5 * self.data_rs.s);
-        draw.strokeDashed(pts, 14, 8.75, .{ .thickness = thickness, .color = draw.paint(theme.color(.control, .text).opacity(alpha)), .after = true });
+        const ws = self.style().wire;
+        const es = self.style().edge;
+        const pts = draw.edgePointsCurved(arena(), start, src_dir, end, end_dir, es.curvature, es.min_tangent) catch break :wire;
+        const alpha: f32 = if (target_center != null) 1.0 else ws.loose_opacity;
+        const thickness = @max(2, ws.thickness * self.data_rs.s);
+        draw.strokeDashed(pts, ws.dash.on, ws.dash.off, .{ .thickness = thickness, .color = draw.paint((ws.color orelse Style.text()).opacity(alpha)), .after = true });
         dvui.cursorSet(.crosshair);
     }
 
     if (self.state.box_select) |bs| {
         const r = rectFromPoints(bs.start, bs.current).intersect(self.canvas_rect);
         if (!r.empty()) {
+            const ss = self.style().selection;
             const fill = switch (bs.mode) {
-                .include => theme.color(.highlight, .fill).opacity(0.15),
-                .exclude => theme.color(.err, .fill).opacity(0.12),
+                .include => ss.include_fill orelse theme.color(.highlight, .fill).opacity(0.15),
+                .exclude => ss.exclude_fill orelse theme.color(.err, .fill).opacity(0.12),
             };
             var b = dvui.Path.Builder.init(arena());
             defer b.deinit();
-            b.addRect(r, .all(6));
+            b.addRect(r, .all(ss.corner_radius));
             const path = b.build();
             const cw = dvui.currentWindow();
             if (path.dupe(cw.arena())) |p| {
                 cw.addRenderCommand(.{ .pathFillConvex = .{ .path = p, .opts = .{ .color = draw.paint(fill) } } }, true);
             } else |_| {}
-            dvui.Path.stroke(path, .{ .thickness = 1, .color = draw.paint(theme.color(.control, .text)), .closed = true, .after = true });
+            dvui.Path.stroke(path, .{ .thickness = 1, .color = draw.paint(ss.outline orelse Style.text()), .closed = true, .after = true });
         }
     }
 
-    if (self.init_opts.edge_shadows) {
-        inline for (.{ .top, .bottom, .left, .right }) |side| draw.edgeShadow(self.canvas_rect, side, 30, 0.25);
+    if (self.style().canvas.vignette) |v| {
+        const opacity = if (theme.dark) v.opacity else v.opacity * v.light_theme_factor;
+        inline for (.{ .top, .bottom, .left, .right }) |side| draw.edgeShadow(self.canvas_rect, side, v.size, opacity);
     }
 }
 

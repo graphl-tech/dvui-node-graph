@@ -326,7 +326,12 @@ fn readmeFrame() anyerror!dvui.App.Result {
         var positions = [_]dvui.Point{ .{ .x = 20, .y = 40 }, .{ .x = 260, .y = 140 } };
     };
 
-    var graph = ng.graph(@src(), .{}, .{});
+    // start from the default style and override what you need
+    var style = ng.Style.default;
+    style.edge.shadow = null;
+    style.node.corner_radius = 4;
+
+    var graph = ng.graph(@src(), .{ .style = style }, .{});
     defer graph.deinit();
 
     // a default node
@@ -479,4 +484,33 @@ test "a .plus socket's wire comes from its wire_source; selection can be caller-
     try dvui.testing.click(.left);
     try dvui.testing.settle(PlusFixture.frame);
     try std.testing.expectEqualSlices(ng.NodeId, &.{1}, PlusFixture.selected.items);
+}
+
+fn styledFrame() anyerror!dvui.App.Result {
+    var style = ng.Style.default;
+    style.node.corner_radius = 0;
+    style.node.shadow = null;
+    style.edge.shadow = null;
+    style.edge.color = .{ .r = 0xd0, .g = 0x40, .b = 0x40 };
+    style.edge.thickness = 4;
+    style.canvas.grid = null;
+    style.canvas.vignette = null;
+    _ = ng.declarative.graph(@src(), &decl, .{
+        .nodes = &.{
+            Decl.Add.nodeAt(1, "add", .{ .x = 20, .y = 20 }),
+            Decl.Add.nodeAt(2, "add2", .{ .x = 260, .y = 120 }),
+        },
+        .edges = &.{.{ .source = .output(1, 0), .target = .input(2, 0) }},
+        .graph = .{ .style = style },
+    }, .{ .tag = "styled-graph" });
+    return .ok;
+}
+
+test "style overrides render" {
+    var t = try dvui.testing.init(.{ .window_size = .{ .w = 600, .h = 400 }, .snapshot_dir = "snapshots" });
+    defer t.deinit();
+    decl = .{};
+    try dvui.testing.settle(styledFrame);
+    try dvui.testing.expectVisible("styled-graph");
+    try snapshotIfImages(&t, @src(), styledFrame);
 }

@@ -90,7 +90,8 @@ pub fn PortWidget(comptime side: types.Side) type {
 
         /// The port name, plus its literal value for inputs that are not connected.
         pub fn defaultLabel(self: *Self) void {
-            const font = dvui.themeGet().font_mono.larger(-2);
+            const ls = self.node.graph.style().label;
+            const font = ls.font orelse dvui.themeGet().font_mono.larger(-2);
             dvui.labelEx(@src(), "{s}", .{self.name()}, .{ .ellipsize = false }, .{ .font = font, .gravity_y = 0.5, .padding = .all(2) });
             if (side == .input) {
                 if (self.ports().value(self.index)) |v| {
@@ -99,7 +100,7 @@ pub fn PortWidget(comptime side: types.Side) type {
                             .font = font,
                             .gravity_y = 0.5,
                             .padding = .all(2),
-                            .color_text = draw.paint(dvui.themeGet().color(.control, .text).opacity(0.6)),
+                            .color_text = draw.paint(dvui.themeGet().color(.control, .text).opacity(ls.value_opacity)),
                         });
                     }
                 }

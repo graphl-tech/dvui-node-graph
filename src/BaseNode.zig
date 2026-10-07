@@ -8,6 +8,7 @@ const dvui = @import("dvui");
 const types = @import("types.zig");
 const GraphWidget = @import("GraphWidget.zig");
 const draw = @import("draw.zig");
+const Style = @import("Style.zig");
 const ports = @import("ports.zig");
 
 const NodeId = types.NodeId;
@@ -15,13 +16,12 @@ const Ports = types.Ports;
 
 const BaseNode = @This();
 
-/// Card padding; sockets with `edge_overlap` are pulled out by this much to sit on the border.
-pub const body_inset: f32 = 5;
-
 pub const InitOptions = struct {
     title: ?[]const u8 = null,
     draggable: bool = true,
     selectable: bool = true,
+    /// Overrides the graph's `style.node` for this node.
+    style: ?Style.Node = null,
     /// Apply this frame's drag delta to the position. Turn off to apply moves yourself from
     /// `GraphWidget.node_drag_delta` (e.g. to route them through an undo system).
     apply_drag: bool = true,
@@ -101,35 +101,40 @@ pub fn initInPlace(
     // First node declared draws on top and gets events first.
     self.front_to_back.init();
 
+    const ns = init_opts.style orelse graph.style().node;
     const theme = dvui.themeGet();
-    const base_fill = theme.color(.window, .fill);
-    const highlight = theme.color(.highlight, .fill);
+    const base_fill = ns.fill orelse theme.color(.window, .fill);
     const fill = if (self.selected)
-        base_fill.lerp(highlight, 0.12)
+        ns.fill_selected orelse base_fill.lerp(theme.color(.highlight, .fill), 0.12)
     else if (self.hovered)
-        base_fill.lerp(theme.color(.control, .text), 0.06)
+        ns.fill_hover orelse base_fill.lerp(Style.text(), 0.06)
     else
         base_fill;
     const border = if (self.selected)
-        theme.focus
+        ns.border_selected orelse theme.focus
     else if (self.hovered)
-        theme.color(.control, .text).lerp(theme.border, 0.3)
+        ns.border_hover orelse Style.text().lerp(theme.border, 0.3)
     else
-        theme.border;
+        ns.border orelse theme.border;
+
+    var shadow = ns.shadow;
+    if (shadow) |*sh| {
+        if (sh.corners == null) sh.corners = .all(ns.corner_radius);
+    }
 
     const defaults: dvui.Options = .{
         .name = "Node",
         .rect = .{ .x = @round(self.position.x), .y = @round(self.position.y) },
         .id_extra = @truncate(id),
-        .margin = .all(body_inset),
-        .padding = .all(body_inset),
-        .corners = .all(12),
+        .margin = .all(ns.padding),
+        .padding = .all(ns.padding),
+        .corners = .all(ns.corner_radius),
         .background = true,
-        .border = .all(1),
-        .color_fill = draw.paint(fill.opacity(0.92)),
+        .border = .all(ns.border_width),
+        .color_fill = draw.paint(fill.opacity(ns.fill_opacity)),
         .color_border = draw.paint(border),
         .min_size_content = .{ .w = 60, .h = 10 },
-        .box_shadow = .{ .alpha = 0.25, .fade = 10, .corners = .all(12) },
+        .box_shadow = shadow,
     };
     self.card.init(src, .{ .dir = .vertical }, defaults.override(opts));
     self.card.drawBackground();

@@ -11,7 +11,6 @@ const dvui = @import("dvui");
 const types = @import("types.zig");
 const draw = @import("draw.zig");
 const GraphWidget = @import("GraphWidget.zig");
-const BaseNode = @import("BaseNode.zig");
 
 const SocketId = types.SocketId;
 
@@ -23,14 +22,14 @@ pub const InitOptions = struct {
     color: ?dvui.Color = null,
     /// Draw as connected. Defaults to whether an edge used this socket last frame.
     filled: ?bool = null,
-    /// Pull the socket outward so it straddles the node border (see `BaseNode.body_inset`).
+    /// Pull the socket outward so it straddles the node border (by `style.node.padding`).
     edge_overlap: bool = true,
     /// Socket a wire dragged out of this one starts from. Lets a `.plus` slot create a socket on
     /// press and have the wire continue from the created socket.
     wire_source: ?SocketId = null,
     /// Proximity scale override in [0, 1]; null uses the graph's proximity animation.
     scale: ?f32 = null,
-    /// Look of a `.flow` socket; null uses `GraphWidget.InitOptions.flow_style`.
+    /// Look of a `.flow` socket; null uses the graph's `style.socket.flow_style`.
     flow_style: ?types.FlowStyle = null,
 };
 
@@ -78,8 +77,8 @@ pub fn init(src: std.builtin.SourceLocation, graph: *GraphWidget, socket: Socket
 
 /// It's expected to call this when `self` is `undefined`.
 pub fn initInPlace(self: *BaseSocket, src: std.builtin.SourceLocation, graph: *GraphWidget, socket: SocketId, init_opts: InitOptions, opts: dvui.Options) void {
-    const r = graph.init_opts.socket_radius;
-    const pull = r + BaseNode.body_inset;
+    const r = graph.style().socket.radius;
+    const pull = r + graph.style().node.padding;
     const defaults: dvui.Options = .{
         .name = "Socket",
         .min_size_content = .{ .w = 2 * r, .h = 2 * r },
@@ -178,16 +177,17 @@ fn drawSocket(self: *BaseSocket, slot: dvui.Rect.Physical) void {
         .h = slot.h * s,
     };
     const theme = dvui.themeGet();
+    const ss = self.graph.style().socket;
     var color = self.init_opts.color orelse theme.color(.control, .text);
-    if (self.hovered()) color = color.lerp(theme.color(.highlight, .fill), 0.35);
+    if (self.hovered()) color = color.lerp(theme.color(.highlight, .fill), ss.hover_tint);
     const filled = self.init_opts.filled orelse self.graph.isConnected(self.socket);
     switch (self.init_opts.kind) {
-        .value => draw.valueSocket(r, filled, color, self.graph.canvas_fill),
-        .flow => switch (self.init_opts.flow_style orelse self.graph.init_opts.flow_style) {
+        .value => draw.valueSocket(r, filled, color, self.graph.canvas_fill, ss.ring_ratio),
+        .flow => switch (self.init_opts.flow_style orelse ss.flow_style) {
             .triangle => draw.flowSocket(r, filled, color, self.graph.canvas_fill),
-            .icon => |icon| draw.iconSocket(r, filled, color, self.graph.canvas_fill, icon.name, icon.tvg),
+            .icon => |icon| draw.iconSocket(r, filled, color, self.graph.canvas_fill, icon.name, icon.tvg, ss.unconnected_icon_opacity),
         },
-        .plus => draw.plusSocket(r, color, self.graph.canvas_fill),
+        .plus => draw.plusSocket(r, color, self.graph.canvas_fill, ss.ring_ratio),
     }
 }
 

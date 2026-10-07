@@ -21,7 +21,12 @@ const model = struct {
     var positions = [_]dvui.Point{ .{ .x = 20, .y = 40 }, .{ .x = 260, .y = 140 } };
 };
 
-var graph = ng.graph(@src(), .{}, .{});
+// start from the default style and override what you need
+var style = ng.Style.default;
+style.edge.shadow = null;
+style.node.corner_radius = 4;
+
+var graph = ng.graph(@src(), .{ .style = style }, .{});
 defer graph.deinit();
 
 // a default node

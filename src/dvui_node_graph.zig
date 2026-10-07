@@ -21,6 +21,7 @@ pub const Ports = types.Ports;
 pub const ports = types.ports;
 pub const portsOfType = types.portsOfType;
 
+pub const Style = @import("Style.zig");
 pub const GraphWidget = @import("GraphWidget.zig");
 pub const BaseNode = @import("BaseNode.zig");
 pub const BaseSocket = @import("BaseSocket.zig");
