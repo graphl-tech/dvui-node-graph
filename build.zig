@@ -1,38 +1,37 @@
 const std = @import("std");
 
 pub fn build(b: *std.Build) void {
+    // The library module has no `dvui` import: a program must contain exactly one dvui, so the
+    // consumer adds their own:
+    //
+    //     const ng = b.dependency("dvui_node_graph", .{}).module("dvui_node_graph");
+    //     ng.addImport("dvui", my_dvui_module);
+    _ = b.addModule("dvui_node_graph", .{ .root_source_file = b.path("src/dvui_node_graph.zig") });
+
+    // The demo and tests pin their own dvui. Only set them up when this package is the root of
+    // the build, so consumers never fetch or configure that dvui (or its SDL3).
+    if (b.dep_prefix.len != 0) return;
+    devSteps(b);
+}
+
+fn devSteps(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
     const test_filter = b.option([]const u8, "test_filter", "filter tests by name");
     const test_filters: []const []const u8 = if (test_filter) |f| &.{f} else &.{};
 
-    // The library module wires an sdl3 dvui by default. Consumers with another backend should use
-    // `addNodeGraphModule` (or create their own module from `src/dvui_node_graph.zig`) and attach
-    // their own `dvui` import, since a program must only contain one dvui instance.
-    const dvui_sdl3_dep = b.dependency("dvui", .{ .target = target, .optimize = optimize, .backend = .sdl3 });
+    const dvui_sdl3_dep = b.lazyDependency("dvui", .{ .target = target, .optimize = optimize, .backend = .sdl3 }) orelse return;
+    const dvui_testing_dep = b.lazyDependency("dvui", .{ .target = target, .optimize = optimize, .backend = .testing }) orelse return;
     const dvui_sdl3 = dvui_sdl3_dep.module("dvui_sdl3");
-
-    const lib_mod = b.addModule("dvui_node_graph", .{
-        .root_source_file = b.path("src/dvui_node_graph.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-    lib_mod.addImport("dvui", dvui_sdl3);
+    const dvui_testing = dvui_testing_dep.module("dvui_testing");
 
     // demo
     {
         const demo = b.addExecutable(.{
             .name = "dvui-node-graph-demo",
-            .root_module = b.createModule(.{
-                .root_source_file = b.path("examples/demo.zig"),
-                .target = target,
-                .optimize = optimize,
-            }),
+            .root_module = withNodeGraph(b, target, optimize, dvui_sdl3, "examples/demo.zig"),
         });
-        demo.root_module.addImport("dvui", dvui_sdl3);
-        demo.root_module.addImport("dvui_node_graph", lib_mod);
-
         const install = b.addInstallArtifact(demo, .{});
         b.getInstallStep().dependOn(&install.step);
         const run = b.addRunArtifact(demo);
@@ -43,10 +42,9 @@ pub fn build(b: *std.Build) void {
 
     // `zig build test`: unit tests + headless interaction tests (dvui testing backend)
     {
-        const dvui_testing_dep = b.dependency("dvui", .{ .target = target, .optimize = optimize, .backend = .testing });
         const tests = b.addTest(.{
             .name = "dvui-node-graph-test",
-            .root_module = addNodeGraphModule(b, target, optimize, dvui_testing_dep.module("dvui_testing"), "src/tests.zig"),
+            .root_module = withNodeGraph(b, target, optimize, dvui_testing, "src/tests.zig"),
             .filters = test_filters,
         });
         tests.root_module.addOptions("test_options", testOptions(b, false));
@@ -60,21 +58,16 @@ pub fn build(b: *std.Build) void {
             .target = target,
             .optimize = optimize,
         });
-        unit_mod.addImport("dvui", dvui_testing_dep.module("dvui_testing"));
+        unit_mod.addImport("dvui", dvui_testing);
         const unit = b.addTest(.{ .name = "dvui-node-graph-unit", .root_module = unit_mod, .filters = test_filters });
         test_step.dependOn(&b.addRunArtifact(unit).step);
     }
 
     // `zig build test-images`: same tests on sdl3, writing PNGs to snapshots/images
     {
-        const dvui_img_dep = b.dependency("dvui", .{
-            .target = target,
-            .optimize = optimize,
-            .backend = .sdl3,
-        });
         const tests = b.addTest(.{
             .name = "dvui-node-graph-test-images",
-            .root_module = addNodeGraphModule(b, target, optimize, dvui_img_dep.module("dvui_sdl3"), "src/tests.zig"),
+            .root_module = withNodeGraph(b, target, optimize, dvui_sdl3, "src/tests.zig"),
             .filters = test_filters,
         });
         tests.root_module.addOptions("test_options", testOptions(b, true));
@@ -90,9 +83,8 @@ fn testOptions(b: *std.Build, images: bool) *std.Build.Step.Options {
     return opts;
 }
 
-/// A module rooted at `root` (relative to this package) whose `dvui` and `dvui_node_graph`
-/// imports use the given dvui module.
-pub fn addNodeGraphModule(
+/// A module rooted at `root` that can import `dvui` and `dvui_node_graph`, both on `dvui_mod`.
+fn withNodeGraph(
     b: *std.Build,
     target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,

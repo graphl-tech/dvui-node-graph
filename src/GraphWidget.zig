@@ -907,6 +907,8 @@ fn processCanvasMouse(self: *GraphWidget, e: *dvui.Event, me: dvui.Event.Mouse) 
 }
 
 /// Multiply the zoom by `factor` keeping the graph point under physical `p` fixed.
+// FIXME: `data_rs` is from the start of the frame, so a second zoom (or a pan) in the same frame
+// anchors on a stale transform and the point under the cursor drifts.
 pub fn zoomAround(self: *GraphWidget, p: Physical, factor: f32) void {
     const anchor = self.data_rs.pointFromPhysical(p);
     const new_scale = std.math.clamp(self.view.scale * factor, self.init_opts.min_zoom, self.init_opts.max_zoom);

@@ -138,8 +138,8 @@ fn imperativeGraph() !void {
         if (n.kind == .number) {
             var row = ng.BaseOutput.init(@src(), node, 0, .{});
             defer row.deinit();
-            const res = dvui.textEntryNumber(@src(), f32, .{ .value = &n.value }, .{ .min_size_content = .{ .w = 50 } });
-            _ = res;
+            // narrower than dvui's default; a plain .min_size_content would also cap the height
+            _ = dvui.textEntryNumber(@src(), f32, .{ .value = &n.value }, (dvui.Options{ .gravity_y = 0.5 }).min_sizeM(5, 1));
         } else {
             for (0..node.outputs.len()) |i| node.baseOutput(@src(), i, .{ .id_extra = i });
         }

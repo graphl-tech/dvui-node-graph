@@ -3,7 +3,12 @@
 Node graph editor widgets for [dvui](https://github.com/david-vanderson/dvui)
 Has both imperative and a declarative APIs.
 
-Requires zig 0.16.
+Requires zig 0.16. The `dvui_node_graph` module brings no dvui of its own; give it yours:
+
+```zig
+const ng_mod = b.dependency("dvui_node_graph", .{}).module("dvui_node_graph");
+ng_mod.addImport("dvui", dvui_module);
+```
 
 ```sh
 zig build demo          # interactive SDL3 demo
