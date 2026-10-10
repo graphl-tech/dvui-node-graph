@@ -18,7 +18,6 @@ node: Node = .{},
 edge: Edge = .{},
 wire: Wire = .{},
 socket: Socket = .{},
-slot: Slot = .{},
 canvas: Canvas = .{},
 selection: Selection = .{},
 label: Label = .{},
@@ -111,12 +110,6 @@ pub const Socket = struct {
     background: bool = true,
     /// How far a hovered socket's color blends toward the theme highlight.
     hover_tint: f32 = 0.35,
-};
-
-/// Look of `BaseSlot`s (places a socket could be created). Sized like sockets.
-pub const Slot = struct {
-    icon: Icon = .{ .name = "dvui_node_graph_slot", .tvg = dvui.entypo.circle_with_plus },
-    background: bool = true,
 };
 
 pub const Grid = struct {

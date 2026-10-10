@@ -80,37 +80,6 @@ pub const Edge = struct {
     }
 };
 
-/// A place on a node where a socket could be created, e.g. between two rows of a list. Wires
-/// can be dropped on it (`GraphWidget.Event.slot_linked`) and dragged out of it. Slot indices are
-/// the app's own and don't relate to socket indices.
-pub const SlotId = struct {
-    node: NodeId,
-    index: u32,
-
-    pub fn eql(a: SlotId, b: SlotId) bool {
-        return a.node == b.node and a.index == b.index;
-    }
-};
-
-/// Something a wire can be dragged from or dropped on.
-pub const Target = union(enum) {
-    socket: SocketId,
-    slot: SlotId,
-
-    pub fn eql(a: Target, b: Target) bool {
-        return switch (a) {
-            .socket => |s| b == .socket and s.eql(b.socket),
-            .slot => |s| b == .slot and s.eql(b.slot),
-        };
-    }
-
-    pub fn node(self: Target) NodeId {
-        return switch (self) {
-            inline else => |t| t.node,
-        };
-    }
-};
-
 /// The inputs or the outputs of one node, as a struct of arrays. `names` sets the port count;
 /// every other column is optional and may be left empty to use its default for all ports.
 pub const Ports = struct {

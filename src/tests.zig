@@ -385,7 +385,7 @@ test "README imperative example" {
     try dvui.testing.settle(readmeFrame);
 }
 
-/// A graph whose node 2 has a free-floating slot that would become its input 5.
+/// A graph whose node 2 has a free-floating "+" socket for input 5, which it doesn't have yet.
 const PlusFixture = struct {
     var events: std.ArrayList(ng.GraphWidget.Event) = .empty;
     var selected: std.ArrayList(ng.NodeId) = .empty;
@@ -427,10 +427,11 @@ const PlusFixture = struct {
             node.baseInput(@src(), 0, .{});
             // floats left of the card, not part of the layout
             const card = node.card.data().borderRectScale().r;
-            var slot = ng.BaseSlot.init(@src(), graph, .{ .node = 2, .index = 7 }, .{
-                .becomes = .input(2, 5),
-            }, .{ .rect = node.column.data().contentRectScale().rectFromPhysical(.{ .x = card.x - 30, .y = card.y, .w = 20, .h = 20 }), .tag = "slot" });
-            slot.deinit();
+            var plus = ng.BaseSocket.init(@src(), graph, .input(2, 5), .{
+                .style = .{ .icon = .{ .name = "test_plus", .tvg = dvui.entypo.circle_with_plus } },
+                .edge_overlap = false,
+            }, .{ .rect = node.column.data().contentRectScale().rectFromPhysical(.{ .x = card.x - 30, .y = card.y, .w = 20, .h = 20 }), .tag = "plus" });
+            plus.deinit();
         }
         for (graph.events()) |e| try events.append(std.testing.allocator, e);
         return .ok;
@@ -452,31 +453,25 @@ fn dragBetween(from: []const u8, to: []const u8, frame: dvui.App.frameFunction) 
     try dvui.testing.settle(frame);
 }
 
-test "slots: wires drag out from the socket they become, and drops emit slot_linked; selection can be caller-owned" {
+test "a socket the model doesn't have yet works both ways; selection can be caller-owned" {
     var t = try dvui.testing.init(.{ .window_size = .{ .w = 600, .h = 400 } });
     defer t.deinit();
     defer PlusFixture.events.deinit(std.testing.allocator);
     defer PlusFixture.selected.deinit(std.testing.allocator);
 
     try dvui.testing.settle(PlusFixture.frame);
-    try dvui.testing.expectVisible("slot");
+    try dvui.testing.expectVisible("plus");
 
-    try dragBetween("slot", "pn-out", PlusFixture.frame);
-    var created: ?ng.Edge = null;
-    for (PlusFixture.events.items) |e| if (e == .link_created) {
-        created = e.link_created;
-    };
-    try std.testing.expect(created.?.eql(.{ .source = .output(1, 0), .target = .input(2, 5) }));
-
-    PlusFixture.events.clearRetainingCapacity();
-    try dragBetween("pn-out", "slot", PlusFixture.frame);
-    var linked = false;
-    for (PlusFixture.events.items) |e| if (e == .slot_linked) {
-        try std.testing.expect(e.slot_linked.source.eql(.output(1, 0)));
-        try std.testing.expect(e.slot_linked.slot.eql(.{ .node = 2, .index = 7 }));
-        linked = true;
-    };
-    try std.testing.expect(linked);
+    const want: ng.Edge = .{ .source = .output(1, 0), .target = .input(2, 5) };
+    for ([_][2][]const u8{ .{ "plus", "pn-out" }, .{ "pn-out", "plus" } }) |drag| {
+        PlusFixture.events.clearRetainingCapacity();
+        try dragBetween(drag[0], drag[1], PlusFixture.frame);
+        var created: ?ng.Edge = null;
+        for (PlusFixture.events.items) |e| if (e == .link_created) {
+            created = e.link_created;
+        };
+        try std.testing.expect(created.?.eql(want));
+    }
 
     // clicking a node selects it through the caller's selection
     try dvui.testing.moveTo("pn-1");
@@ -512,4 +507,54 @@ test "style overrides render" {
     try dvui.testing.settle(styledFrame);
     try dvui.testing.expectVisible("styled-graph");
     try snapshotIfImages(&t, @src(), styledFrame);
+}
+
+const demo = @import("demo");
+
+fn demoFrame() anyerror!dvui.App.Result {
+    return demo.frame();
+}
+
+fn demoNode(id: ng.NodeId) *demo.Node {
+    for (demo.nodes.items) |*n| if (n.id == id) return n;
+    unreachable;
+}
+
+test "demo: the add node's + adds inputs" {
+    var t = try dvui.testing.init(.{ .window_size = .{ .w = 1000, .h = 700 }, .snapshot_dir = "snapshots" });
+    defer t.deinit();
+    try demo.init(t.window);
+    defer demo.deinit(t.window);
+    try dvui.testing.settle(demoFrame);
+
+    // node 3 is the add node, starting with inputs a and b; its "+" is input 2
+    const gid = dvui.tagGet("demo-graph").?.id;
+    const cw = dvui.currentWindow();
+    try std.testing.expectEqual(2, demoNode(3).arity);
+
+    // clicking the + adds an input
+    _ = try cw.addEventMouseMotion(.{ .pt = ng.GraphWidget.lastFrameSocket(gid, .input(3, 2)).?.center });
+    _ = try dvui.testing.step(demoFrame);
+    try dvui.testing.click(.left);
+    try dvui.testing.settle(demoFrame);
+    try std.testing.expectEqual(3, demoNode(3).arity);
+
+    // wiring a number into the new + adds another input, linked
+    const from = ng.GraphWidget.lastFrameSocket(gid, .output(1, 0)).?.center;
+    const to = ng.GraphWidget.lastFrameSocket(gid, .input(3, 3)).?.center;
+    _ = try cw.addEventMouseMotion(.{ .pt = from });
+    _ = try dvui.testing.step(demoFrame);
+    _ = try cw.addEventMouseButton(.left, .press);
+    _ = try dvui.testing.step(demoFrame);
+    for (0..2) |_| {
+        _ = try cw.addEventMouseMotion(.{ .pt = to });
+        _ = try dvui.testing.step(demoFrame);
+    }
+    _ = try cw.addEventMouseButton(.left, .release);
+    try dvui.testing.settle(demoFrame);
+    try std.testing.expectEqual(4, demoNode(3).arity);
+    var linked = false;
+    for (demo.edges.items) |e| linked = linked or e.eql(.{ .source = .output(1, 0), .target = .input(3, 3) });
+    try std.testing.expect(linked);
+    try snapshotIfImages(&t, @src(), demoFrame);
 }

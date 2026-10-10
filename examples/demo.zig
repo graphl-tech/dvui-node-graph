@@ -2,7 +2,8 @@
 //!
 //! Drag from a socket to wire it up, drop a wire on empty space to spawn a node, click an edge
 //! to delete it, drag nodes (shift/ctrl-drag the canvas to box select), delete/backspace removes
-//! the selection, scroll to zoom, drag the canvas to pan.
+//! the selection, scroll to zoom, drag the canvas to pan. "add" takes any number of inputs: wire
+//! into (or click) its "+" to add one.
 
 const std = @import("std");
 const dvui = @import("dvui");
@@ -26,15 +27,17 @@ const gpa = std.heap.smp_allocator;
 
 const Kind = enum { number, add, print };
 
-const Node = struct {
+pub const Node = struct {
     id: ng.NodeId,
     kind: Kind,
     value: f32 = 0,
+    /// Number of inputs of an `add` node.
+    arity: u31 = 2,
     position: dvui.Point,
 };
 
-var nodes: std.ArrayList(Node) = .empty;
-var edges: std.ArrayList(ng.Edge) = .empty;
+pub var nodes: std.ArrayList(Node) = .empty;
+pub var edges: std.ArrayList(ng.Edge) = .empty;
 var next_id: ng.NodeId = 1;
 var use_declarative = false;
 
@@ -45,7 +48,7 @@ fn addNode(kind: Kind, p: dvui.Point) !ng.NodeId {
     return id;
 }
 
-fn init(win: *dvui.Window) !void {
+pub fn init(win: *dvui.Window) !void {
     _ = win;
     const a = try addNode(.number, .{ .x = 40, .y = 60 });
     const b = try addNode(.number, .{ .x = 40, .y = 220 });
@@ -58,7 +61,7 @@ fn init(win: *dvui.Window) !void {
     try edges.append(gpa, .{ .source = .output(c, 0), .target = .input(d, 1) });
 }
 
-fn deinit(win: *dvui.Window) void {
+pub fn deinit(win: *dvui.Window) void {
     _ = win;
     nodes.deinit(gpa);
     edges.deinit(gpa);
@@ -71,12 +74,54 @@ const flow_socket: ng.Style.Socket = .{
     .unconnected_opacity = 0.4,
 };
 
-fn inputsOf(kind: Kind) ng.Ports {
-    return switch (kind) {
+/// The socket an `add` node would add next: input `arity`, drawn as a "+". It is an ordinary
+/// socket; `addEdge`/`handleEvent` create the input when a wire or click lands on it.
+const plus_socket: ng.Style.Socket = .{
+    .icon = .{ .name = "demo_plus", .tvg = dvui.entypo.circle_with_plus },
+    .icon_connected = null,
+    .unconnected_opacity = 0.6,
+};
+
+const letters = [_][]const u8{ "a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m", "n", "o", "p", "q", "r", "s", "t", "u", "v", "w", "x", "y", "z" };
+
+fn inputsOf(n: *const Node) !ng.Ports {
+    return switch (n.kind) {
         .number => .none(.input),
-        .add => comptime ng.portsOfType(struct { a: f32, b: f32 }, .input),
+        .add => blk: {
+            const arena = dvui.currentWindow().arena();
+            const count = @min(n.arity, letters.len);
+            const names = try arena.alloc([]const u8, count + 1);
+            const styles = try arena.alloc(?ng.Style.Socket, count + 1);
+            for (names[0..count], styles[0..count], letters[0..count]) |*name, *st, l| {
+                name.* = l;
+                st.* = null;
+            }
+            names[count] = "";
+            styles[count] = plus_socket;
+            break :blk .{ .side = .input, .names = names, .styles = styles };
+        },
         .print => .{ .side = .input, .names = &.{ "exec", "value" }, .styles = &.{flow_socket} },
     };
+}
+
+fn nodeById(id: ng.NodeId) ?*Node {
+    for (nodes.items) |*n| if (n.id == id) return n;
+    return null;
+}
+
+/// Grow an `add` node so that its input `index` exists.
+fn ensureInput(s: ng.SocketId) void {
+    if (s.side() != .input) return;
+    const n = nodeById(s.node) orelse return;
+    if (n.kind == .add and s.socket.index >= n.arity) n.arity = @min(s.socket.index + 1, letters.len);
+}
+
+fn addEdge(edge: ng.Edge) !void {
+    ensureInput(edge.source);
+    ensureInput(edge.target);
+    // an input accepts a single edge
+    removeEdgesAt(edge.target);
+    if (!hasEdge(edge)) try edges.append(gpa, edge);
 }
 
 fn outputsOf(kind: Kind) ng.Ports {
@@ -103,7 +148,7 @@ fn hasEdge(edge: ng.Edge) bool {
     return false;
 }
 
-fn frame() !dvui.App.Result {
+pub fn frame() !dvui.App.Result {
     {
         var bar = dvui.box(@src(), .{ .dir = .horizontal }, .{ .expand = .horizontal, .padding = .all(4) });
         defer bar.deinit();
@@ -116,11 +161,11 @@ fn frame() !dvui.App.Result {
 }
 
 fn imperativeGraph() !void {
-    var graph = ng.graph(@src(), .{}, .{ .margin = .all(8) });
+    var graph = ng.graph(@src(), .{}, .{ .margin = .all(8), .tag = "demo-graph" });
     defer graph.deinit();
 
     for (nodes.items) |*n| {
-        var node = graph.node(@src(), n.id, &n.position, inputsOf(n.kind), outputsOf(n.kind), .{
+        var node = graph.node(@src(), n.id, &n.position, try inputsOf(n), outputsOf(n.kind), .{
             .title = @tagName(n.kind),
         }, .{});
         defer node.deinit();
@@ -167,19 +212,15 @@ fn removeEdgesAt(s: ng.SocketId) void {
 
 fn handleEvent(graph: ?*ng.GraphWidget, e: ng.GraphWidget.Event) !void {
     switch (e) {
-        .link_created => |edge| {
-            // an input accepts a single edge
-            removeEdgesAt(edge.target);
-            if (!hasEdge(edge)) try edges.append(gpa, edge);
-        },
+        .link_created => |edge| try addEdge(edge),
+        .socket_clicked => |s| ensureInput(s),
         .link_clicked => |edge| for (edges.items, 0..) |x, i| if (x.eql(edge)) {
             _ = edges.orderedRemove(i);
             break;
         },
         .link_dropped => |drop| {
             const id = try addNode(.add, drop.point);
-            const edge = ng.Edge.normalized(drop.source, if (drop.source.side() == .output) .input(id, 0) else .output(id, 0));
-            try edges.append(gpa, edge);
+            try addEdge(ng.Edge.normalized(drop.source, if (drop.source.side() == .output) .input(id, 0) else .output(id, 0)));
         },
         .delete_selection => if (graph) |g| {
             for (g.selectedNodes()) |id| removeNode(id);
@@ -201,10 +242,10 @@ const Ctx = struct {
 fn declarativeGraph() !void {
     const arena = dvui.currentWindow().arena();
     const decl_nodes = try arena.alloc(ng.declarative.Node, nodes.items.len);
-    for (nodes.items, decl_nodes) |n, *d| d.* = .{
+    for (nodes.items, decl_nodes) |*n, *d| d.* = .{
         .id = n.id,
         .title = @tagName(n.kind),
-        .inputs = inputsOf(n.kind),
+        .inputs = try inputsOf(n),
         .outputs = outputsOf(n.kind),
         .position = n.position,
     };
