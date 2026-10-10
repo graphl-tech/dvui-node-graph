@@ -177,18 +177,19 @@ fn drawSocket(self: *BaseSocket, slot: dvui.Rect.Physical) void {
         .h = slot.h * s,
     };
     const theme = dvui.themeGet();
-    if (selected) {
-        if (self.graph.style().socket.selected_glow) |glow| {
-            const extra = glow.size * self.graph.data_rs.s;
-            const glow_color = (glow.color orelse theme.color(.highlight, .fill)).opacity(glow.opacity);
-            draw.glowCircle(draw.rectCenter(r), r.w * 0.5 + extra * 0.5, extra, glow_color);
-        }
-    }
     var color = self.init_opts.color orelse theme.color(.control, .text);
     if (self.hovered()) color = color.lerp(theme.color(.highlight, .fill), self.graph.style().socket.hover_tint);
     if (!connected) color = color.opacity(ss.unconnected_opacity);
     const icon = if (connected) ss.icon_connected orelse ss.icon else ss.icon;
     draw.socketIcon(r, icon, color, if (ss.background) self.graph.canvas_fill else null);
+    if (selected) {
+        if (self.graph.style().socket.selected_highlight) |hl| {
+            const px = self.graph.data_rs.s;
+            const t = hl.thickness * px;
+            const ring_r = r.w * 0.5 + hl.gap * px + t * 0.5;
+            draw.strokeCircle(draw.rectCenter(r), ring_r, t, hl.color orelse theme.color(.highlight, .fill));
+        }
+    }
 }
 
 pub fn deinit(self: *BaseSocket) void {

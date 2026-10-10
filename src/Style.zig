@@ -110,17 +110,18 @@ pub const Socket = struct {
     background: bool = true,
     /// How far a hovered socket's color blends toward the theme highlight.
     hover_tint: f32 = 0.35,
-    /// Glow around a socket selected for click-to-link; null draws none.
-    selected_glow: ?Glow = .{},
+    /// Ring around a socket selected for click-to-link; null draws none.
+    selected_highlight: ?Highlight = .{},
 };
 
-/// A soft colored halo.
-pub const Glow = struct {
+/// A solid ring just outside a socket.
+pub const Highlight = struct {
     /// Theme highlight.
     color: ?dvui.Color = null,
-    /// How far it extends past the socket, in graph units.
-    size: f32 = 6,
-    opacity: f32 = 0.8,
+    /// Ring thickness, in graph units.
+    thickness: f32 = 2,
+    /// Space between the socket and the ring, in graph units.
+    gap: f32 = 1.5,
 };
 
 pub const Grid = struct {
