@@ -577,6 +577,10 @@ test "click-to-link: click two sockets to link them; other clicks drop the selec
     try clickTag("out-1-0");
     try std.testing.expect(fx.selected_socket.?.eql(.output(1, 0)));
     try snapshotIfImages(&t, @src(), imperativeFrame);
+    // hovering a socket it can link to previews the edge
+    try dvui.testing.moveTo("in-2-0");
+    try dvui.testing.settle(imperativeFrame);
+    try snapshotIfImages(&t, @src(), imperativeFrame);
 
     try clickTag("in-2-0");
     try std.testing.expect(fx.selected_socket == null);

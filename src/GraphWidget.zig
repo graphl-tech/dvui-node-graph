@@ -989,25 +989,36 @@ fn rectFromPoints(a: Physical, b: Physical) dvui.Rect.Physical {
     return .{ .x = @min(a.x, b.x), .y = @min(a.y, b.y), .w = @abs(b.x - a.x), .h = @abs(b.y - a.y) };
 }
 
+/// Dashed wire from `start` (a socket on `start_side`) to `target`, or to the loose point `free`.
+fn drawWirePreview(self: *GraphWidget, start: Physical, start_side: types.Side, target: ?SocketRecord, free: Physical) void {
+    const end = if (target) |t| t.center else free;
+    // a free end points back toward the source
+    const end_dir = if (target) |t| sideDir(t.id.side()) else if (end.x >= start.x) @as(f32, -1) else 1;
+    const ws = self.style().wire;
+    const es = self.style().edge;
+    const pts = draw.edgePointsCurved(arena(), start, sideDir(start_side), end, end_dir, es.curvature, es.min_tangent) catch return;
+    const alpha: f32 = if (target != null) 1.0 else ws.loose_opacity;
+    const thickness = @max(2, ws.thickness * self.data_rs.s);
+    draw.strokeDashed(pts, ws.dash.on, ws.dash.off, .{ .thickness = thickness, .color = draw.paint((ws.color orelse Style.text()).opacity(alpha)), .after = true });
+}
+
 fn drawOverlays(self: *GraphWidget) void {
     const theme = dvui.themeGet();
     const mouse = dvui.currentWindow().mouse_pt;
 
-    if (self.state.wire) |w| wire: {
-        const start = self.socketCenter(w.source) orelse w.start;
+    if (self.state.wire) |w| {
         const target_rec = if (self.wire_target) |t| self.recordAnyFrame(t) else null;
-        const target_center = if (target_rec) |r| r.center else null;
-        const end = target_center orelse mouse;
-        const src_dir = sideDir(w.source.side());
-        // a free end points back toward the source
-        const end_dir = if (target_rec) |r| sideDir(r.id.side()) else if (end.x >= start.x) @as(f32, -1) else 1;
-        const ws = self.style().wire;
-        const es = self.style().edge;
-        const pts = draw.edgePointsCurved(arena(), start, src_dir, end, end_dir, es.curvature, es.min_tangent) catch break :wire;
-        const alpha: f32 = if (target_center != null) 1.0 else ws.loose_opacity;
-        const thickness = @max(2, ws.thickness * self.data_rs.s);
-        draw.strokeDashed(pts, ws.dash.on, ws.dash.off, .{ .thickness = thickness, .color = draw.paint((ws.color orelse Style.text()).opacity(alpha)), .after = true });
+        self.drawWirePreview(self.socketCenter(w.source) orelse w.start, w.source.side(), if (target_rec) |r| r else null, mouse);
         dvui.cursorSet(.crosshair);
+    }
+
+    // click-to-link: preview the edge a click on the hovered socket would create
+    if (self.state.selected_socket) |sel| preview: {
+        if (!self.init_opts.click_to_link or !self.mouseOverCanvas(mouse)) break :preview;
+        const hovered = self.socketAt(mouse) orelse break :preview;
+        if (!self.canLink(sel, hovered)) break :preview;
+        const start = self.socketCenter(sel) orelse break :preview;
+        self.drawWirePreview(start, sel.side(), self.record(hovered), mouse);
     }
 
     if (self.state.box_select) |bs| {
