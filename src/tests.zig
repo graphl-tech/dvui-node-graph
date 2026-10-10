@@ -19,6 +19,7 @@ const Fixture = struct {
     node2_pos: dvui.Point = .{ .x = 260, .y = 140 },
     node3_pos: dvui.Point = .{ .x = 20, .y = 220 },
     allow_same_side_links: bool = false,
+    selected_socket: ?ng.SocketId = null,
     /// Copy of the last `nodes_moved` node list (event slices only live for one frame).
     moved_nodes: std.ArrayList(ng.NodeId) = .empty,
 
@@ -84,6 +85,7 @@ fn imperativeFrame() anyerror!dvui.App.Result {
 
     for (fx.edges.items) |e| _ = graph.link(e.source.node, e.source.socket, e.target.node, e.target.socket);
 
+    defer fx.selected_socket = graph.selectedSocket();
     for (graph.events()) |e| {
         try fx.events.append(alloc, e);
         switch (e) {
@@ -557,4 +559,44 @@ test "demo: the add node's + adds inputs" {
     for (demo.edges.items) |e| linked = linked or e.eql(.{ .source = .output(1, 0), .target = .input(3, 3) });
     try std.testing.expect(linked);
     try snapshotIfImages(&t, @src(), demoFrame);
+}
+
+fn clickTag(tag: []const u8) !void {
+    try dvui.testing.moveTo(tag);
+    _ = try dvui.testing.step(imperativeFrame);
+    try dvui.testing.click(.left);
+    try dvui.testing.settle(imperativeFrame);
+}
+
+test "click-to-link: click two sockets to link them; other clicks drop the selection" {
+    var t = try initTest();
+    defer t.deinit();
+    defer fx.deinit();
+    try dvui.testing.settle(imperativeFrame);
+
+    try clickTag("out-1-0");
+    try std.testing.expect(fx.selected_socket.?.eql(.output(1, 0)));
+    try snapshotIfImages(&t, @src(), imperativeFrame);
+
+    try clickTag("in-2-0");
+    try std.testing.expect(fx.selected_socket == null);
+    try std.testing.expectEqual(1, fx.edges.items.len);
+    try std.testing.expect(fx.edges.items[0].eql(.{ .source = .output(1, 0), .target = .input(2, 0) }));
+
+    // a click on empty canvas drops the selection without linking
+    try clickTag("out-2-0");
+    try std.testing.expect(fx.selected_socket.?.eql(.output(2, 0)));
+    const g = dvui.tagGet("graph").?.rect;
+    _ = try dvui.currentWindow().addEventMouseMotion(.{ .pt = .{ .x = g.x + g.w - 20, .y = g.y + g.h - 20 } });
+    _ = try dvui.testing.step(imperativeFrame);
+    try dvui.testing.click(.left);
+    try dvui.testing.settle(imperativeFrame);
+    try std.testing.expect(fx.selected_socket == null);
+    try std.testing.expectEqual(1, fx.edges.items.len);
+
+    // escape cancels it too
+    try clickTag("out-2-0");
+    try dvui.testing.pressKey(.escape, .none);
+    try dvui.testing.settle(imperativeFrame);
+    try std.testing.expect(fx.selected_socket == null);
 }

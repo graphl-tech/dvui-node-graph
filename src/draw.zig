@@ -127,6 +127,14 @@ pub fn fillCircle(center: Point, r: f32, color: dvui.Color) void {
     dvui.Path.fillConvex(b.build(), .{ .color = paint(color), .center = center });
 }
 
+/// A disk of `radius` whose edge fades out over `fade` physical pixels.
+pub fn glowCircle(center: Point, radius: f32, fade: f32, color: dvui.Color) void {
+    if (radius < 0.5) return;
+    var b = circle(center, radius);
+    defer b.deinit();
+    dvui.Path.fillConvex(b.build(), .{ .color = paint(color), .center = center, .fade = fade });
+}
+
 pub fn strokeCircle(center: Point, r: f32, thickness: f32, color: dvui.Color) void {
     if (r < 0.5) return;
     var b = circle(center, r);

@@ -72,6 +72,9 @@ pub const InitOptions = struct {
     box_select: bool = true,
     /// Let the user drag wires between two inputs or two outputs.
     allow_same_side_links: bool = false,
+    /// Clicking a socket selects it; clicking a second socket links the two. Any other press on
+    /// the canvas, Escape, or starting a wire drag drops the selection.
+    click_to_link: bool = true,
     min_zoom: f32 = 0.2,
     max_zoom: f32 = 2.0,
 };
@@ -152,6 +155,8 @@ const State = struct {
     wire_target: ?SocketId = null,
     node_drag: ?NodeDrag = null,
     box_select: ?BoxSelect = null,
+    /// Socket selected for click-to-link.
+    selected_socket: ?SocketId = null,
 };
 
 init_opts: InitOptions,
@@ -195,6 +200,8 @@ node_drag_delta: dvui.Point = .{},
 canvas_events_done: bool = false,
 /// Set by `events()`. Declaring nodes or links afterwards would miss their events this frame.
 events_called: bool = false,
+/// A socket was pressed this frame (so presses this frame don't drop the socket selection).
+socket_pressed: bool = false,
 prev_clip: dvui.Rect.Physical = undefined,
 prev_rendering: bool = undefined,
 prev_snap: bool = undefined,
@@ -382,6 +389,7 @@ fn processWire(self: *GraphWidget) void {
                         self.state.wire_target = null;
                         self.state.press = null;
                         self.queueSocketEvent(p.socket, .{ .wire = .start });
+                        self.state.selected_socket = null;
                     }
                 }
                 dvui.refresh(null, @src(), wd.id);
@@ -405,6 +413,7 @@ fn processWire(self: *GraphWidget) void {
                     self.state.press = null;
                     self.queueSocketEvent(p.socket, .{ .mouse = .{ .click = .{ .button = me.button, .mod = me.mod, .p = me.p } } });
                     self.pushEvent(.{ .socket_clicked = p.socket });
+                    if (self.init_opts.click_to_link) self.clickToLink(p.socket);
                 }
             },
             else => {},
@@ -707,10 +716,43 @@ pub fn pressedSocket(self: *GraphWidget) ?SocketId {
 
 /// Begin a socket press: captures the mouse to the canvas so the press can become a wire drag.
 pub fn pressSocket(self: *GraphWidget, socket: SocketId, me: dvui.Event.Mouse, event_num: u16) void {
+    self.socket_pressed = true;
     self.state.press = .{ .socket = socket, .pt = me.p };
     self.state.wire = null;
     dvui.captureMouse(self.box.data(), event_num);
     dvui.dragPreStart(me.button, me.p, .{ .name = wire_drag_name });
+}
+
+/// Socket selected for click-to-link, if any.
+pub fn selectedSocket(self: *const GraphWidget) ?SocketId {
+    return self.state.selected_socket;
+}
+
+/// Select (or with null, deselect) a socket for click-to-link.
+pub fn selectSocket(self: *GraphWidget, s: ?SocketId) void {
+    self.state.selected_socket = s;
+    dvui.refresh(null, @src(), self.id());
+}
+
+fn clickToLink(self: *GraphWidget, s: SocketId) void {
+    const sel = self.state.selected_socket orelse return self.selectSocket(s);
+    if (sel.eql(s)) return self.selectSocket(null);
+    if (!self.canLink(sel, s)) return self.selectSocket(s);
+    self.pushEvent(.{ .link_created = Edge.normalized(sel, s) });
+    self.selectSocket(null);
+}
+
+/// Any press on the canvas that isn't on a socket drops the click-to-link selection.
+fn dropSocketSelectionOnOtherPress(self: *GraphWidget) void {
+    if (self.state.selected_socket == null or self.socket_pressed) return;
+    for (dvui.events()) |*e| {
+        if (e.evt != .mouse) continue;
+        const me = e.evt.mouse;
+        if (me.action == .press and self.mouseOverCanvas(me.p)) {
+            self.selectSocket(null);
+            return;
+        }
+    }
 }
 
 /// Mark `s` as the compatible socket under the mouse during a wire drag.
@@ -809,6 +851,7 @@ fn processCanvasEvents(self: *GraphWidget) void {
     if (!self.interactive()) return;
 
     self.processWire();
+    self.dropSocketSelectionOnOtherPress();
 
     for (dvui.events()) |*e| {
         switch (e.evt) {
@@ -843,7 +886,12 @@ fn processCanvasEvents(self: *GraphWidget) void {
                     self.pushEvent(.delete_selection);
                 } else if (ke.code == .escape) {
                     e.handle(@src(), self.box.data());
-                    self.clearSelection();
+                    // first cancel a pending click-to-link, then the node selection
+                    if (self.state.selected_socket != null) {
+                        self.selectSocket(null);
+                    } else {
+                        self.clearSelection();
+                    }
                 } else if (ke.code == .a and ke.mod.matchBind("ctrl/cmd")) {
                     e.handle(@src(), self.box.data());
                     for (self.nodes.items) |n| self.select(n.id, .add);
@@ -1018,6 +1066,10 @@ pub fn deinit(self: *GraphWidget) void {
     if (self.state.wire != null) {
         self.state.wire_target = self.wire_target;
         dvui.refresh(null, @src(), wd_id);
+    }
+    // a selected socket that is no longer drawn is gone
+    if (self.state.selected_socket) |sel| {
+        if (self.interactive() and self.record(sel) == null) self.state.selected_socket = null;
     }
 
     dvui.clipSet(self.prev_clip);

@@ -110,6 +110,17 @@ pub const Socket = struct {
     background: bool = true,
     /// How far a hovered socket's color blends toward the theme highlight.
     hover_tint: f32 = 0.35,
+    /// Glow around a socket selected for click-to-link; null draws none.
+    selected_glow: ?Glow = .{},
+};
+
+/// A soft colored halo.
+pub const Glow = struct {
+    /// Theme highlight.
+    color: ?dvui.Color = null,
+    /// How far it extends past the socket, in graph units.
+    size: f32 = 6,
+    opacity: f32 = 0.8,
 };
 
 pub const Grid = struct {

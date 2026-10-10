@@ -167,7 +167,8 @@ fn processEvents(self: *BaseSocket) void {
 fn drawSocket(self: *BaseSocket, slot: dvui.Rect.Physical) void {
     const ss = self.init_opts.style orelse self.graph.style().socket;
     const connected = self.init_opts.connected orelse self.graph.isConnected(self.socket);
-    const scale = self.init_opts.scale orelse if (self.hovered()) 1.0 else self.graph.socketScale(self.socket);
+    const selected = if (self.graph.selectedSocket()) |sel| sel.eql(self.socket) else false;
+    const scale = self.init_opts.scale orelse if (self.hovered() or selected) 1.0 else self.graph.socketScale(self.socket);
     const s = std.math.clamp(scale, 0, 1);
     const r: dvui.Rect.Physical = .{
         .x = slot.x + slot.w * (1 - s) * 0.5,
@@ -176,6 +177,13 @@ fn drawSocket(self: *BaseSocket, slot: dvui.Rect.Physical) void {
         .h = slot.h * s,
     };
     const theme = dvui.themeGet();
+    if (selected) {
+        if (self.graph.style().socket.selected_glow) |glow| {
+            const extra = glow.size * self.graph.data_rs.s;
+            const glow_color = (glow.color orelse theme.color(.highlight, .fill)).opacity(glow.opacity);
+            draw.glowCircle(draw.rectCenter(r), r.w * 0.5 + extra * 0.5, extra, glow_color);
+        }
+    }
     var color = self.init_opts.color orelse theme.color(.control, .text);
     if (self.hovered()) color = color.lerp(theme.color(.highlight, .fill), self.graph.style().socket.hover_tint);
     if (!connected) color = color.opacity(ss.unconnected_opacity);
