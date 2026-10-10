@@ -134,61 +134,16 @@ pub fn strokeCircle(center: Point, r: f32, thickness: f32, color: dvui.Color) vo
     dvui.Path.stroke(b.build(), .{ .thickness = thickness, .color = paint(color), .closed = true });
 }
 
-/// Value pin: a ring in `color` over a disk of `background` (so the hole reads as canvas, not
-/// node body), with a filled center when `filled`.
-pub fn valueSocket(r: Rect, filled: bool, color: dvui.Color, background: dvui.Color, ring_ratio: f32) void {
+/// A socket or slot: `icon` tinted `color` over an optional disk of `background`.
+pub fn socketIcon(r: Rect, icon: Style.Icon, color: dvui.Color, background: ?dvui.Color) void {
     const center = rectCenter(r);
-    const outer = @min(r.w, r.h) * 0.5;
-    if (outer < 0.5) return;
-    const inner = outer * ring_ratio;
-    fillCircle(center, outer, background);
-    if (filled) fillCircle(center, inner, color);
-    strokeCircle(center, (outer + inner) * 0.5, outer - inner, color);
-}
-
-/// Flow pin: a right-pointing triangle, solid when `filled`, outlined otherwise.
-pub fn flowSocket(r: Rect, filled: bool, color: dvui.Color, background: dvui.Color) void {
-    const center = rectCenter(r);
-    const half = @min(r.w, r.h) * 0.5;
-    if (half < 0.5) return;
-    fillCircle(center, half, background);
-    const s = half * 0.75;
-    var b = dvui.Path.Builder.init(dvui.currentWindow().arena());
-    defer b.deinit();
-    b.addPoint(.{ .x = center.x - s * 0.6, .y = center.y - s });
-    b.addPoint(.{ .x = center.x + s, .y = center.y });
-    b.addPoint(.{ .x = center.x - s * 0.6, .y = center.y + s });
-    const path = b.build();
-    if (filled) dvui.Path.fillConvex(path, .{ .color = paint(color), .center = center });
-    dvui.Path.stroke(path, .{ .thickness = @max(1, half * 0.2), .color = paint(color), .closed = true });
-}
-
-/// Flow pin drawn as a ring around an icon, both faded when not `filled`.
-pub fn iconSocket(r: Rect, filled: bool, color: dvui.Color, background: dvui.Color, name: []const u8, tvg: []const u8, unconnected_opacity: f32) void {
-    const center = rectCenter(r);
-    const outer = @min(r.w, r.h) * 0.5;
-    if (outer < 0.5) return;
-    const c = color.opacity(if (filled) 1.0 else unconnected_opacity);
-    fillCircle(center, outer, background);
-
-    const icon_h = outer * 2 * 0.55;
-    const icon_w = dvui.iconWidth(name, tvg, icon_h) catch icon_h;
-    const icon_rect: Rect = .{ .x = center.x - icon_w / 2, .y = center.y - icon_h / 2, .w = icon_w, .h = icon_h };
-    dvui.renderIcon(name, tvg, .{ .r = icon_rect, .s = 1 }, .{}, .{ .fill_color = paint(c), .stroke_color = paint(c) }) catch {};
-
-    const t = @max(0.5, outer * 0.3);
-    strokeCircle(center, outer - t / 2, t, c);
-}
-
-/// "+" slot: an empty ring with a plus sign inside.
-pub fn plusSocket(r: Rect, color: dvui.Color, background: dvui.Color, ring_ratio: f32) void {
-    valueSocket(r, false, color, background, ring_ratio);
-    const center = rectCenter(r);
-    const arm = @min(r.w, r.h) * 0.22;
-    if (arm < 0.5) return;
-    const t = @max(1, arm * 0.45);
-    dvui.Path.stroke(.{ .points = &.{ .{ .x = center.x - arm, .y = center.y }, .{ .x = center.x + arm, .y = center.y } } }, .{ .thickness = t, .color = paint(color) });
-    dvui.Path.stroke(.{ .points = &.{ .{ .x = center.x, .y = center.y - arm }, .{ .x = center.x, .y = center.y + arm } } }, .{ .thickness = t, .color = paint(color) });
+    const radius = @min(r.w, r.h) * 0.5;
+    if (radius < 0.5) return;
+    if (background) |bg| fillCircle(center, radius, bg);
+    const h = radius * 2;
+    const w = dvui.iconWidth(icon.name, icon.tvg, h) catch h;
+    const icon_rect: Rect = .{ .x = center.x - w / 2, .y = center.y - h / 2, .w = w, .h = h };
+    dvui.renderIcon(icon.name, icon.tvg, .{ .r = icon_rect, .s = 1 }, .{}, .{ .fill_color = paint(color), .stroke_color = paint(color) }) catch {};
 }
 
 fn smoothstep(t: f32) f32 {

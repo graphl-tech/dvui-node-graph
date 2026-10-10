@@ -385,8 +385,7 @@ test "README imperative example" {
     try dvui.testing.settle(readmeFrame);
 }
 
-/// A graph whose node 2 has a free-floating "+" slot that, when dragged, wires from input 5
-/// (a socket that would be created on press in a real app).
+/// A graph whose node 2 has a free-floating slot that would become its input 5.
 const PlusFixture = struct {
     var events: std.ArrayList(ng.GraphWidget.Event) = .empty;
     var selected: std.ArrayList(ng.NodeId) = .empty;
@@ -415,69 +414,69 @@ const PlusFixture = struct {
         var graph = ng.graph(@src(), .{ .selection = .{ .ctx = &dummy, .vtable = &vtable } }, .{});
         defer graph.deinit();
 
-        graph.baseNodeEx(@src(), 1, &positions[0], struct {}{}, struct { out: i32 }{ .out = 0 }, .{}, .{ .tag = "pn-1" });
+        {
+            var node = graph.node(@src(), 1, &positions[0], struct {}{}, struct { out: i32 }{ .out = 0 }, .{}, .{ .tag = "pn-1" });
+            defer node.deinit();
+            var row = ng.BaseOutput.initEx(@src(), node, 0, .{ .socket_opts = .{ .tag = "pn-out" } }, .{});
+            defer row.deinit();
+            row.defaultLabel();
+        }
         {
             var node = graph.node(@src(), 2, &positions[1], struct { a: i32 }{ .a = 0 }, struct {}{}, .{}, .{ .tag = "pn-2" });
             defer node.deinit();
             node.baseInput(@src(), 0, .{});
             // floats left of the card, not part of the layout
             const card = node.card.data().borderRectScale().r;
-            var plus = ng.BaseSocket.init(@src(), graph, .{ .node = 2, .socket = .input(7) }, .{
-                .kind = .plus,
-                .edge_overlap = false,
-                .wire_source = .input(2, 5),
-            }, .{ .rect = node.column.data().contentRectScale().rectFromPhysical(.{ .x = card.x - 30, .y = card.y, .w = 20, .h = 20 }), .tag = "plus" });
-            plus.deinit();
+            var slot = ng.BaseSlot.init(@src(), graph, .{ .node = 2, .index = 7 }, .{
+                .becomes = .input(2, 5),
+            }, .{ .rect = node.column.data().contentRectScale().rectFromPhysical(.{ .x = card.x - 30, .y = card.y, .w = 20, .h = 20 }), .tag = "slot" });
+            slot.deinit();
         }
         for (graph.events()) |e| try events.append(std.testing.allocator, e);
         return .ok;
     }
 };
 
-test "a .plus socket's wire comes from its wire_source; selection can be caller-owned" {
+fn dragBetween(from: []const u8, to: []const u8, frame: dvui.App.frameFunction) !void {
+    const cw = dvui.currentWindow();
+    const target = dvui.tagGet(to).?.rect.center();
+    try dvui.testing.moveTo(from);
+    _ = try dvui.testing.step(frame);
+    _ = try cw.addEventMouseButton(.left, .press);
+    _ = try dvui.testing.step(frame);
+    for (0..2) |_| {
+        _ = try cw.addEventMouseMotion(.{ .pt = target });
+        _ = try dvui.testing.step(frame);
+    }
+    _ = try cw.addEventMouseButton(.left, .release);
+    try dvui.testing.settle(frame);
+}
+
+test "slots: wires drag out from the socket they become, and drops emit slot_linked; selection can be caller-owned" {
     var t = try dvui.testing.init(.{ .window_size = .{ .w = 600, .h = 400 } });
     defer t.deinit();
     defer PlusFixture.events.deinit(std.testing.allocator);
     defer PlusFixture.selected.deinit(std.testing.allocator);
 
     try dvui.testing.settle(PlusFixture.frame);
-    try dvui.testing.expectVisible("plus");
+    try dvui.testing.expectVisible("slot");
 
-    // drag from the "+" onto node 1's output
-    const cw = dvui.currentWindow();
-    var out_pt: dvui.Point.Physical = undefined;
-    {
-        const n1 = dvui.tagGet("pn-1").?.rect;
-        out_pt = .{ .x = n1.x + n1.w, .y = n1.y + n1.h * 0.7 };
-    }
-    try dvui.testing.moveTo("plus");
-    _ = try dvui.testing.step(PlusFixture.frame);
-    _ = try cw.addEventMouseButton(.left, .press);
-    _ = try dvui.testing.step(PlusFixture.frame);
-    // find the output socket center by sweeping up the right edge of node 1
-    var y = out_pt.y;
+    try dragBetween("slot", "pn-out", PlusFixture.frame);
     var created: ?ng.Edge = null;
-    while (y > out_pt.y - 40 and created == null) : (y -= 3) {
-        _ = try cw.addEventMouseMotion(.{ .pt = .{ .x = out_pt.x - 6, .y = y } });
-        _ = try dvui.testing.step(PlusFixture.frame);
-    }
-    _ = try cw.addEventMouseButton(.left, .release);
-    try dvui.testing.settle(PlusFixture.frame);
-    var saw_wire = false;
-    for (PlusFixture.events.items) |e| switch (e) {
-        .link_created => |edge| {
-            created = edge;
-            saw_wire = true;
-        },
-        .link_dropped => |d| {
-            try std.testing.expect(d.source.eql(.input(2, 5)));
-            saw_wire = true;
-        },
-        else => {},
+    for (PlusFixture.events.items) |e| if (e == .link_created) {
+        created = e.link_created;
     };
-    try std.testing.expect(saw_wire);
-    // either way the wire came from the redirected source, never the "+" itself
-    if (created) |edge| try std.testing.expect(edge.target.eql(.input(2, 5)));
+    try std.testing.expect(created.?.eql(.{ .source = .output(1, 0), .target = .input(2, 5) }));
+
+    PlusFixture.events.clearRetainingCapacity();
+    try dragBetween("pn-out", "slot", PlusFixture.frame);
+    var linked = false;
+    for (PlusFixture.events.items) |e| if (e == .slot_linked) {
+        try std.testing.expect(e.slot_linked.source.eql(.output(1, 0)));
+        try std.testing.expect(e.slot_linked.slot.eql(.{ .node = 2, .index = 7 }));
+        linked = true;
+    };
+    try std.testing.expect(linked);
 
     // clicking a node selects it through the caller's selection
     try dvui.testing.moveTo("pn-1");

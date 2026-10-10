@@ -10,8 +10,6 @@
 
 const dvui = @import("dvui");
 
-const types = @import("types.zig");
-
 const Style = @This();
 
 pub const default: Style = .{};
@@ -20,6 +18,7 @@ node: Node = .{},
 edge: Edge = .{},
 wire: Wire = .{},
 socket: Socket = .{},
+slot: Slot = .{},
 canvas: Canvas = .{},
 selection: Selection = .{},
 label: Label = .{},
@@ -87,6 +86,14 @@ pub const Wire = struct {
     dash: Dash = .{},
 };
 
+/// A TinyVG icon. dvui caches renders by `name`, so use a distinct name per icon.
+pub const Icon = struct {
+    name: []const u8,
+    tvg: []const u8,
+};
+
+/// Look and sizing of sockets. Override per port with `Ports.styles` or per socket with
+/// `BaseSocket.InitOptions.style`. Size and proximity fields are read from the graph's style.
 pub const Socket = struct {
     /// Graph units at full proximity scale.
     radius: f32 = 10,
@@ -94,13 +101,22 @@ pub const Socket = struct {
     proximity: f32 = 40,
     /// Scale when the mouse is far away.
     rest_scale: f32 = 0.5,
-    /// Inner/outer radius of the value socket ring.
-    ring_ratio: f32 = 0.6,
+    /// Drawn while unconnected.
+    icon: Icon = .{ .name = "dvui_node_graph_socket", .tvg = dvui.entypo.circle },
+    /// Drawn while connected; null keeps `icon`.
+    icon_connected: ?Icon = .{ .name = "dvui_node_graph_socket_connected", .tvg = dvui.entypo.controller_record },
+    /// Opacity of the icon while unconnected.
+    unconnected_opacity: f32 = 1,
+    /// Fill a disk of the canvas color behind the icon, so edges end at its outline.
+    background: bool = true,
     /// How far a hovered socket's color blends toward the theme highlight.
     hover_tint: f32 = 0.35,
-    /// Opacity of an unconnected icon flow socket.
-    unconnected_icon_opacity: f32 = 0.33,
-    flow_style: types.FlowStyle = .triangle,
+};
+
+/// Look of `BaseSlot`s (places a socket could be created). Sized like sockets.
+pub const Slot = struct {
+    icon: Icon = .{ .name = "dvui_node_graph_slot", .tvg = dvui.entypo.circle_with_plus },
+    background: bool = true,
 };
 
 pub const Grid = struct {

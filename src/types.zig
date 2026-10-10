@@ -1,6 +1,8 @@
 const std = @import("std");
 const dvui = @import("dvui");
 
+const Style = @import("Style.zig");
+
 /// Caller-chosen stable identifier for a node. Must be unique within a graph.
 pub const NodeId = u64;
 
@@ -78,22 +80,35 @@ pub const Edge = struct {
     }
 };
 
-/// Visual style of a socket.
-pub const SocketKind = enum {
-    /// Donut pin, filled when connected (data/value flow).
-    value,
-    /// Arrow pin (control/execution flow).
-    flow,
-    /// "+" in a ring: a slot that creates a socket when used (e.g. inserting an array element).
-    plus,
+/// A place on a node where a socket could be created, e.g. between two rows of a list. Wires
+/// can be dropped on it (`GraphWidget.Event.slot_linked`) and dragged out of it. Slot indices are
+/// the app's own and don't relate to socket indices.
+pub const SlotId = struct {
+    node: NodeId,
+    index: u32,
+
+    pub fn eql(a: SlotId, b: SlotId) bool {
+        return a.node == b.node and a.index == b.index;
+    }
 };
 
-/// How `.flow` sockets are drawn.
-pub const FlowStyle = union(enum) {
-    /// A right-pointing triangle, solid when connected.
-    triangle,
-    /// A ring with an icon (TinyVG bytes) inside, faded when unconnected.
-    icon: struct { name: []const u8, tvg: []const u8 },
+/// Something a wire can be dragged from or dropped on.
+pub const Target = union(enum) {
+    socket: SocketId,
+    slot: SlotId,
+
+    pub fn eql(a: Target, b: Target) bool {
+        return switch (a) {
+            .socket => |s| b == .socket and s.eql(b.socket),
+            .slot => |s| b == .slot and s.eql(b.slot),
+        };
+    }
+
+    pub fn node(self: Target) NodeId {
+        return switch (self) {
+            inline else => |t| t.node,
+        };
+    }
 };
 
 /// The inputs or the outputs of one node, as a struct of arrays. `names` sets the port count;
@@ -105,9 +120,9 @@ pub const Ports = struct {
     sockets: []const Socket = &.{},
     /// Formatted literal values (e.g. "5" for `.{ .x = 5 }`).
     values: []const ?[]const u8 = &.{},
-    type_names: []const []const u8 = &.{},
-    kinds: []const SocketKind = &.{},
     colors: []const ?dvui.Color = &.{},
+    /// Per-port socket look (icons, ...); null uses the graph's `style.socket`.
+    styles: []const ?Style.Socket = &.{},
 
     pub fn none(side: Side) Ports {
         return .{ .side = side };
@@ -129,12 +144,8 @@ pub const Ports = struct {
         return if (i < self.values.len) self.values[i] else null;
     }
 
-    pub fn typeName(self: Ports, i: usize) ?[]const u8 {
-        return if (i < self.type_names.len) self.type_names[i] else null;
-    }
-
-    pub fn kind(self: Ports, i: usize) SocketKind {
-        return if (i < self.kinds.len) self.kinds[i] else .value;
+    pub fn style(self: Ports, i: usize) ?Style.Socket {
+        return if (i < self.styles.len) self.styles[i] else null;
     }
 
     pub fn color(self: Ports, i: usize) ?dvui.Color {
@@ -164,7 +175,7 @@ pub fn ports(alloc: std.mem.Allocator, comptime side: Side, from: anytype) std.m
     return out;
 }
 
-/// Ports for a struct *type* (names and type names, no values). Usable at comptime.
+/// Ports named after the fields of a struct *type* (no values). Usable at comptime.
 pub fn portsOfType(comptime T: type, comptime side: Side) Ports {
     const S = struct {
         const fields = @typeInfo(T).@"struct".fields;
@@ -174,14 +185,8 @@ pub fn portsOfType(comptime T: type, comptime side: Side) Ports {
             const final = out;
             break :blk final;
         };
-        const type_names = blk: {
-            var out: [fields.len][]const u8 = undefined;
-            for (fields, 0..) |f, i| out[i] = @typeName(f.type);
-            const final = out;
-            break :blk final;
-        };
     };
-    return .{ .side = side, .names = &S.names, .type_names = &S.type_names };
+    return .{ .side = side, .names = &S.names };
 }
 
 fn formatValue(alloc: std.mem.Allocator, v: anytype) std.mem.Allocator.Error!?[]const u8 {
@@ -212,14 +217,12 @@ test ports {
     try std.testing.expectEqualStrings("\"hi\"", ps.value(1).?);
     try std.testing.expectEqualStrings("true", ps.value(2).?);
     try std.testing.expect(ps.socket(2).eql(.input(2)));
-    try std.testing.expectEqual(SocketKind.value, ps.kind(2));
 }
 
 test portsOfType {
     const ps = comptime portsOfType(struct { a: f32, b: u8 }, .output);
     try std.testing.expectEqual(2, ps.len());
     try std.testing.expectEqualStrings("b", ps.names[1]);
-    try std.testing.expectEqualStrings("u8", ps.typeName(1).?);
     try std.testing.expect(ps.socket(1).eql(.output(1)));
 }
 
@@ -228,11 +231,11 @@ test "Ports with explicit sockets" {
         .side = .input,
         .names = &.{ "exec", "value" },
         .sockets = &.{ .input(0), .input(7) },
-        .kinds = &.{.flow},
+        .colors = &.{dvui.Color.black},
     };
     try std.testing.expect(ps.socket(1).eql(.input(7)));
-    try std.testing.expectEqual(SocketKind.flow, ps.kind(0));
-    try std.testing.expectEqual(SocketKind.value, ps.kind(1));
+    try std.testing.expect(ps.color(0) != null);
+    try std.testing.expect(ps.color(1) == null);
     try std.testing.expectEqual(1, ps.indexOf(.input(7)).?);
 }
 

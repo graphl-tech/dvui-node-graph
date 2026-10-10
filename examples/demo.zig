@@ -64,18 +64,25 @@ fn deinit(win: *dvui.Window) void {
     edges.deinit(gpa);
 }
 
+/// Execution-order sockets: an arrow in a ring, faded until connected.
+const flow_socket: ng.Style.Socket = .{
+    .icon = .{ .name = "demo_flow", .tvg = dvui.entypo.arrow_with_circle_right },
+    .icon_connected = null,
+    .unconnected_opacity = 0.4,
+};
+
 fn inputsOf(kind: Kind) ng.Ports {
     return switch (kind) {
         .number => .none(.input),
         .add => comptime ng.portsOfType(struct { a: f32, b: f32 }, .input),
-        .print => .{ .side = .input, .names = &.{ "exec", "value" }, .kinds = &.{.flow} },
+        .print => .{ .side = .input, .names = &.{ "exec", "value" }, .styles = &.{flow_socket} },
     };
 }
 
 fn outputsOf(kind: Kind) ng.Ports {
     return switch (kind) {
         .number, .add => comptime ng.portsOfType(struct { value: f32 }, .output),
-        .print => .{ .side = .output, .names = &.{"then"}, .kinds = &.{.flow} },
+        .print => .{ .side = .output, .names = &.{"then"}, .styles = &.{flow_socket} },
     };
 }
 

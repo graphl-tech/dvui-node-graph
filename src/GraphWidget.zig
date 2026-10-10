@@ -28,6 +28,8 @@ const Style = @import("Style.zig");
 const NodeId = types.NodeId;
 const Socket = types.Socket;
 const SocketId = types.SocketId;
+const SlotId = types.SlotId;
+const Target = types.Target;
 const Edge = types.Edge;
 const Physical = dvui.Point.Physical;
 
@@ -80,6 +82,7 @@ pub const ContextTarget = union(enum) {
     canvas,
     node: NodeId,
     socket: SocketId,
+    slot: SlotId,
 };
 
 /// Graph-level events, collected while the frame's nodes and edges are declared. Slices in
@@ -88,12 +91,16 @@ pub const Event = union(enum) {
     /// A wire was dragged from `source` and released on a compatible socket `target`. Opposite
     /// side pairs are ordered output -> input.
     link_created: Edge,
-    /// A wire was released over no socket. `point` is in graph space.
+    /// A wire from `source` was released on a slot: create the slot's socket and link it.
+    slot_linked: struct { source: SocketId, slot: SlotId },
+    /// A wire was released over nothing it can connect to. `point` is in graph space.
     link_dropped: struct { source: SocketId, point: dvui.Point },
     /// An edge declared with `link` was clicked.
     link_clicked: Edge,
     /// A socket was pressed and released without dragging a wire.
     socket_clicked: SocketId,
+    /// A slot was pressed and released without dragging a wire.
+    slot_clicked: SlotId,
     /// The selected nodes were dragged by `delta` (graph space).
     nodes_moved: struct { nodes: []const NodeId, delta: dvui.Point },
     selection_changed,
@@ -103,8 +110,11 @@ pub const Event = union(enum) {
     context_menu: struct { target: ContextTarget, point: dvui.Point, point_natural: dvui.Point.Natural },
 };
 
-const SocketRecord = struct {
-    id: SocketId,
+/// A socket or slot drawn this (or last) frame.
+const TargetRecord = struct {
+    target: Target,
+    /// The socket itself, or the socket a slot would become; decides what it can link to.
+    socket: SocketId,
     center: Physical,
     radius: f32,
 };
@@ -116,20 +126,20 @@ const NodeRecord = struct {
 };
 
 const QueuedSocketEvent = struct {
-    socket: SocketId,
+    target: Target,
     event: BaseSocket.Event,
 };
 
 const Press = struct {
-    /// Socket widget that was pressed; receives click/wire events.
-    pressed: SocketId,
+    /// Socket or slot that was pressed; receives click/wire events.
+    pressed: Target,
     /// Socket the wire starts from if the press becomes a drag.
     source: SocketId,
     pt: Physical,
 };
 
 const Wire = struct {
-    pressed: SocketId,
+    pressed: Target,
     source: SocketId,
     /// Fallback start point when `source` is not (yet) declared as a socket.
     start: Physical,
@@ -152,7 +162,7 @@ const State = struct {
     view: View = .{},
     press: ?Press = null,
     wire: ?Wire = null,
-    wire_target: ?SocketId = null,
+    wire_target: ?Target = null,
     node_drag: ?NodeDrag = null,
     box_select: ?BoxSelect = null,
 };
@@ -169,11 +179,11 @@ canvas_rect: dvui.Rect.Physical,
 data_rs: dvui.RectScale = undefined,
 canvas_fill: dvui.Color,
 
-prev_sockets: []const SocketRecord,
+prev_targets: []const TargetRecord,
 prev_nodes: []const NodeRecord,
 prev_connected: []const SocketId,
-sockets: std.ArrayList(SocketRecord) = .empty,
-socket_index: std.AutoHashMapUnmanaged(SocketId, usize) = .empty,
+targets: std.ArrayList(TargetRecord) = .empty,
+target_index: std.AutoHashMapUnmanaged(Target, usize) = .empty,
 nodes: std.ArrayList(NodeRecord) = .empty,
 connected: std.ArrayList(SocketId) = .empty,
 /// Internal selection storage, used when `init_opts.selection` is null.
@@ -186,12 +196,12 @@ socket_events: std.ArrayList(QueuedSocketEvent) = .empty,
 late_socket_events: std.ArrayList(QueuedSocketEvent) = .empty,
 sockets_done: bool = false,
 
-/// Socket nearest the mouse last frame; the only one that grows with proximity.
-nearest_socket: ?SocketId = null,
+/// Socket or slot nearest the mouse last frame; the only one that grows with proximity.
+nearest: ?Target = null,
 /// Topmost node under the mouse last frame.
 hover_node: ?NodeId = null,
-/// Compatible socket under the mouse this frame while a wire is being dragged.
-wire_target: ?SocketId = null,
+/// Compatible socket or slot under the mouse this frame while a wire is being dragged.
+wire_target: ?Target = null,
 /// How far selected nodes move this frame (graph space).
 node_drag_delta: dvui.Point = .{},
 
@@ -229,7 +239,7 @@ pub fn initInPlace(self: *GraphWidget, src: std.builtin.SourceLocation, init_opt
         .view = undefined,
         .canvas_rect = undefined,
         .canvas_fill = draw.flat(options.color(.fill)),
-        .prev_sockets = &.{},
+        .prev_targets = &.{},
         .prev_nodes = &.{},
         .prev_connected = &.{},
     };
@@ -241,7 +251,7 @@ pub fn initInPlace(self: *GraphWidget, src: std.builtin.SourceLocation, init_opt
     self.view = init_opts.view orelse &self.state.view;
     self.view.scale = std.math.clamp(self.view.scale, init_opts.min_zoom, init_opts.max_zoom);
 
-    self.prev_sockets = dvui.dataGetSlice(null, wd_id, "_sockets", []SocketRecord) orelse &.{};
+    self.prev_targets = dvui.dataGetSlice(null, wd_id, "_targets", []TargetRecord) orelse &.{};
     self.prev_nodes = dvui.dataGetSlice(null, wd_id, "_nodes", []NodeRecord) orelse &.{};
     self.prev_connected = dvui.dataGetSlice(null, wd_id, "_connected", []SocketId) orelse &.{};
     if (init_opts.selection == null) {
@@ -319,12 +329,12 @@ fn computeHover(self: *GraphWidget) void {
     if (!self.mouseOverCanvas(mouse)) return;
 
     var best_d2 = std.math.floatMax(f32);
-    for (self.prev_sockets) |s| {
-        const d = mouse.diff(s.center);
+    for (self.prev_targets) |t| {
+        const d = mouse.diff(t.center);
         const d2 = d.x * d.x + d.y * d.y;
         if (d2 < best_d2) {
             best_d2 = d2;
-            self.nearest_socket = s.id;
+            self.nearest = t.target;
         }
     }
 
@@ -397,7 +407,10 @@ fn processWire(self: *GraphWidget) void {
                 if (self.state.wire) |w| {
                     self.state.wire = null;
                     if (self.resolveWireTarget(w.source, me.p)) |t| {
-                        self.pushEvent(.{ .link_created = Edge.normalized(w.source, t) });
+                        switch (t) {
+                            .socket => |s| self.pushEvent(.{ .link_created = Edge.normalized(w.source, s) }),
+                            .slot => |s| self.pushEvent(.{ .slot_linked = .{ .source = w.source, .slot = s } }),
+                        }
                         self.queueSocketEvent(w.pressed, .{ .wire = .{ .connect = t } });
                     } else {
                         const pt = self.data_rs.pointFromPhysical(me.p);
@@ -407,7 +420,10 @@ fn processWire(self: *GraphWidget) void {
                 } else if (self.state.press) |p| {
                     self.state.press = null;
                     self.queueSocketEvent(p.pressed, .{ .mouse = .{ .click = .{ .button = me.button, .mod = me.mod, .p = me.p } } });
-                    self.pushEvent(.{ .socket_clicked = p.pressed });
+                    switch (p.pressed) {
+                        .socket => |s| self.pushEvent(.{ .socket_clicked = s }),
+                        .slot => |s| self.pushEvent(.{ .slot_clicked = s }),
+                    }
                 }
             },
             else => {},
@@ -415,25 +431,25 @@ fn processWire(self: *GraphWidget) void {
     }
 }
 
-fn resolveWireTarget(self: *GraphWidget, source: SocketId, p: Physical) ?SocketId {
+fn resolveWireTarget(self: *GraphWidget, source: SocketId, p: Physical) ?Target {
     if (self.wire_target) |t| return t;
-    const records = if (self.sockets.items.len > 0) self.sockets.items else self.prev_sockets;
-    var best: ?SocketId = null;
+    const records = if (self.targets.items.len > 0) self.targets.items else self.prev_targets;
+    var best: ?Target = null;
     var best_d = std.math.floatMax(f32);
     for (records) |r| {
-        if (!self.canLink(source, r.id)) continue;
+        if (!self.canLink(source, r.socket)) continue;
         const d = p.diff(r.center).length();
         if (d <= r.radius and d < best_d) {
-            best = r.id;
+            best = r.target;
             best_d = d;
         }
     }
     return best orelse self.state.wire_target;
 }
 
-fn queueSocketEvent(self: *GraphWidget, s: SocketId, e: BaseSocket.Event) void {
+fn queueSocketEvent(self: *GraphWidget, t: Target, e: BaseSocket.Event) void {
     const list = if (self.sockets_done) &self.late_socket_events else &self.socket_events;
-    list.append(arena(), .{ .socket = s, .event = e }) catch {};
+    list.append(arena(), .{ .target = t, .event = e }) catch {};
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -493,8 +509,8 @@ pub fn linkEdge(self: *GraphWidget, edge: Edge, opts: LinkOptions) LinkResult {
     self.connected.append(arena(), edge.target) catch {};
     if (opts.hidden) return .{};
 
-    const a = self.socketRecord(edge.source) orelse return .{};
-    const b = self.socketRecord(edge.target) orelse return .{};
+    const a = self.record(.{ .socket = edge.source }) orelse return .{};
+    const b = self.record(.{ .socket = edge.target }) orelse return .{};
     var result: LinkResult = .{ .drawn = true };
 
     const es = opts.style orelse self.style().edge;
@@ -582,17 +598,23 @@ pub fn nodeAt(self: *GraphWidget, p: Physical) ?NodeId {
     return null;
 }
 
-/// Socket under physical point `p` among sockets declared so far this frame.
-pub fn socketAt(self: *GraphWidget, p: Physical) ?SocketId {
-    for (self.sockets.items) |s| {
-        if (p.diff(s.center).length() <= s.radius) return s.id;
+/// Socket or slot under physical point `p` among those declared so far this frame.
+pub fn targetAt(self: *GraphWidget, p: Physical) ?Target {
+    for (self.targets.items) |t| {
+        if (p.diff(t.center).length() <= t.radius) return t.target;
     }
     return null;
 }
 
-fn socketRecord(self: *GraphWidget, s: SocketId) ?SocketRecord {
-    const i = self.socket_index.get(s) orelse return null;
-    return self.sockets.items[i];
+fn record(self: *GraphWidget, t: Target) ?TargetRecord {
+    const i = self.target_index.get(t) orelse return null;
+    return self.targets.items[i];
+}
+
+fn recordAnyFrame(self: *GraphWidget, t: Target) ?TargetRecord {
+    if (self.record(t)) |r| return r;
+    for (self.prev_targets) |r| if (r.target.eql(t)) return r;
+    return null;
 }
 
 pub const SocketGeometry = struct { center: Physical, radius: f32 };
@@ -600,23 +622,22 @@ pub const SocketGeometry = struct { center: Physical, radius: f32 };
 /// Where socket `s` was drawn last frame in the graph with widget id `graph_id`. Usable before
 /// that graph's `init` this frame (e.g. from a menu rendered first).
 pub fn lastFrameSocket(graph_id: dvui.Id, s: SocketId) ?SocketGeometry {
-    const recs = dvui.dataGetSlice(null, graph_id, "_sockets", []SocketRecord) orelse return null;
-    for (recs) |r| if (r.id.eql(s)) return .{ .center = r.center, .radius = r.radius };
+    const recs = dvui.dataGetSlice(null, graph_id, "_targets", []TargetRecord) orelse return null;
+    const t: Target = .{ .socket = s };
+    for (recs) |r| if (r.target.eql(t)) return .{ .center = r.center, .radius = r.radius };
     return null;
 }
 
 /// Physical center of a socket declared this frame, else last frame.
 pub fn socketCenter(self: *GraphWidget, s: SocketId) ?Physical {
-    if (self.socketRecord(s)) |r| return r.center;
-    for (self.prev_sockets) |r| if (r.id.eql(s)) return r.center;
-    return null;
+    const r = self.recordAnyFrame(.{ .socket = s }) orelse return null;
+    return r.center;
 }
 
 /// Physical hit radius of a socket declared this frame, else last frame.
 pub fn socketRadius(self: *GraphWidget, s: SocketId) ?f32 {
-    if (self.socketRecord(s)) |r| return r.radius;
-    for (self.prev_sockets) |r| if (r.id.eql(s)) return r.radius;
-    return null;
+    const r = self.recordAnyFrame(.{ .socket = s }) orelse return null;
+    return r.radius;
 }
 
 /// Graph-space border rect of a node declared this frame, else last frame.
@@ -653,15 +674,17 @@ pub fn registerNode(self: *GraphWidget, node_id: NodeId, border_rect: dvui.Rect.
     self.nodes.append(arena(), .{ .id = node_id, .rect = self.data_rs.rectFromPhysical(border_rect) }) catch {};
 }
 
-pub fn registerSocket(self: *GraphWidget, s: SocketId, center: Physical, radius: f32) void {
-    self.socket_index.put(arena(), s, self.sockets.items.len) catch return;
-    self.sockets.append(arena(), .{ .id = s, .center = center, .radius = radius }) catch {};
+/// Record a socket or slot drawn this frame. `socket` is the socket itself, or the socket a slot
+/// would become.
+pub fn registerTarget(self: *GraphWidget, t: Target, socket: SocketId, center: Physical, radius: f32) void {
+    self.target_index.put(arena(), t, self.targets.items.len) catch return;
+    self.targets.append(arena(), .{ .target = t, .socket = socket, .center = center, .radius = radius }) catch {};
 }
 
-/// Events queued for socket `s` this frame.
-pub fn takeSocketEvents(self: *GraphWidget, s: SocketId, out: *std.ArrayList(BaseSocket.Event)) void {
+/// Events queued for socket or slot `t` this frame.
+pub fn takeTargetEvents(self: *GraphWidget, t: Target, out: *std.ArrayList(BaseSocket.Event)) void {
     for (self.socket_events.items) |q| {
-        if (q.socket.eql(s)) out.append(arena(), q.event) catch {};
+        if (q.target.eql(t)) out.append(arena(), q.event) catch {};
     }
 }
 
@@ -672,24 +695,24 @@ pub fn isConnected(self: *GraphWidget, s: SocketId) bool {
     return false;
 }
 
-/// Proximity scale in [rest, 1] for a socket centered at `center` with full radius `radius`.
-/// Only the socket nearest the mouse last frame grows.
-pub fn socketScale(self: *GraphWidget, s: SocketId) f32 {
+/// Proximity scale in [rest, 1] for a socket or slot. Only the one nearest the mouse last frame
+/// grows, and while wiring only if the wire could connect to it.
+pub fn targetScale(self: *GraphWidget, t: Target) f32 {
     const rest = self.style().socket.rest_scale;
-    const nearest = self.nearest_socket orelse return rest;
-    if (!nearest.eql(s)) return rest;
-    if (self.wireSource()) |src| {
-        if (!src.eql(s) and !self.canLink(src, s)) return rest;
-    }
-    const rec = for (self.prev_sockets) |r| {
-        if (r.id.eql(s)) break r;
+    const nearest = self.nearest orelse return rest;
+    if (!nearest.eql(t)) return rest;
+    const rec = for (self.prev_targets) |r| {
+        if (r.target.eql(t)) break r;
     } else return rest;
+    if (self.wireSource()) |src| {
+        if (!src.eql(rec.socket) and !self.canLink(src, rec.socket)) return rest;
+    }
     const d = dvui.currentWindow().mouse_pt.diff(rec.center).length();
     if (d <= rec.radius) return 1.0;
     if (dvui.reduce_motion) return rest;
     const range = self.style().socket.proximity;
-    const t = std.math.clamp((rec.radius + range - d) / range, 0.0, 1.0);
-    return std.math.lerp(rest, 1.0, dvui.easing.inCubic(t));
+    const closeness = std.math.clamp((rec.radius + range - d) / range, 0.0, 1.0);
+    return std.math.lerp(rest, 1.0, dvui.easing.inCubic(closeness));
 }
 
 /// Socket a wire is being dragged from, if any.
@@ -704,17 +727,18 @@ pub fn pressedSource(self: *GraphWidget) ?SocketId {
     return p.source;
 }
 
-/// Begin a socket press: captures the mouse to the canvas so the press can become a wire drag.
-pub fn pressSocket(self: *GraphWidget, pressed: SocketId, source: SocketId, me: dvui.Event.Mouse, event_num: u16) void {
+/// Begin a socket or slot press: captures the mouse to the canvas so the press can become a wire
+/// drag from `source`.
+pub fn pressTarget(self: *GraphWidget, pressed: Target, source: SocketId, me: dvui.Event.Mouse, event_num: u16) void {
     self.state.press = .{ .pressed = pressed, .source = source, .pt = me.p };
     self.state.wire = null;
     dvui.captureMouse(self.box.data(), event_num);
     dvui.dragPreStart(me.button, me.p, .{ .name = wire_drag_name });
 }
 
-/// Mark `s` as the compatible socket under the mouse during a wire drag.
-pub fn setWireTarget(self: *GraphWidget, s: SocketId) void {
-    self.wire_target = s;
+/// Mark `t` as the compatible socket or slot under the mouse during a wire drag.
+pub fn setWireTarget(self: *GraphWidget, t: Target) void {
+    self.wire_target = t;
 }
 
 pub fn beginNodeDrag(self: *GraphWidget, capture_id: dvui.Id) void {
@@ -818,9 +842,10 @@ fn processCanvasEvents(self: *GraphWidget) void {
                     (!e.handled or self.nodeAt(me.p) != null))
                 {
                     e.handle(@src(), self.box.data());
-                    const target: ContextTarget = if (self.socketAt(me.p)) |s|
-                        .{ .socket = s }
-                    else if (self.nodeAt(me.p)) |n| blk: {
+                    const target: ContextTarget = if (self.targetAt(me.p)) |t| switch (t) {
+                        .socket => |s| .{ .socket = s },
+                        .slot => |s| .{ .slot = s },
+                    } else if (self.nodeAt(me.p)) |n| blk: {
                         if (!self.isSelected(n)) self.select(n, .replace);
                         break :blk .{ .node = n };
                     } else .canvas;
@@ -946,11 +971,12 @@ fn drawOverlays(self: *GraphWidget) void {
 
     if (self.state.wire) |w| wire: {
         const start = self.socketCenter(w.source) orelse w.start;
-        const target_center = if (self.wire_target) |t| self.socketCenter(t) else null;
+        const target_rec = if (self.wire_target) |t| self.recordAnyFrame(t) else null;
+        const target_center = if (target_rec) |r| r.center else null;
         const end = target_center orelse mouse;
         const src_dir = sideDir(w.source.side());
         // a free end points back toward the source
-        const end_dir = if (self.wire_target) |t| sideDir(t.side()) else if (end.x >= start.x) @as(f32, -1) else 1;
+        const end_dir = if (target_rec) |r| sideDir(r.socket.side()) else if (end.x >= start.x) @as(f32, -1) else 1;
         const ws = self.style().wire;
         const es = self.style().edge;
         const pts = draw.edgePointsCurved(arena(), start, src_dir, end, end_dir, es.curvature, es.min_tangent) catch break :wire;
@@ -1005,7 +1031,7 @@ pub fn deinit(self: *GraphWidget) void {
 
     const wd_id = self.id();
     if (self.connectedChanged()) dvui.refresh(null, @src(), wd_id);
-    dvui.dataSetSlice(null, wd_id, "_sockets", self.sockets.items);
+    dvui.dataSetSlice(null, wd_id, "_targets", self.targets.items);
     dvui.dataSetSlice(null, wd_id, "_nodes", self.nodes.items);
     dvui.dataSetSlice(null, wd_id, "_connected", self.connected.items);
     if (self.init_opts.selection == null) dvui.dataSetSlice(null, wd_id, "_selection", self.selection.items);

@@ -23,7 +23,7 @@ pub fn PortWidget(comptime side: types.Side) type {
         };
 
         pub const InitOptions = struct {
-            /// Overrides the port's kind/color columns and the socket defaults.
+            /// Overrides the port's `styles`/`colors` columns and the socket defaults.
             socket: ?BaseSocket.InitOptions = null,
             /// dvui options for the socket widget (e.g. `.tag`).
             socket_opts: dvui.Options = .{},
@@ -53,7 +53,7 @@ pub fn PortWidget(comptime side: types.Side) type {
             const defaults: dvui.Options = .{ .expand = .horizontal, .gravity_x = gravity_x };
             self.row.init(src, .{ .dir = .horizontal }, defaults.override(opts));
 
-            const socket_opts = init_opts.socket orelse BaseSocket.InitOptions{ .kind = ps.kind(index), .color = ps.color(index) };
+            const socket_opts = init_opts.socket orelse BaseSocket.InitOptions{ .style = ps.style(index), .color = ps.color(index) };
             var socket = BaseSocket.init(@src(), node.graph, self.socketId(), socket_opts, init_opts.socket_opts);
             const socket_events = socket.events();
             self.socket_hovered = socket.hovered();
