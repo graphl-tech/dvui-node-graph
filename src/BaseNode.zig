@@ -136,7 +136,6 @@ pub fn initInPlace(
 pub fn titleLabel(self: *BaseNode, comptime fmt: []const u8, args: anytype) void {
     std.debug.assert(self.column_side == null);
     dvui.labelEx(@src(), fmt, args, .{ .ellipsize = false }, .{
-        .font = dvui.themeGet().font_mono.withWeight(.bold),
         .padding = .all(2),
         .expand = .horizontal,
     });
@@ -170,14 +169,14 @@ pub fn defaultSockets(self: *BaseNode) void {
 pub fn baseInput(self: *BaseNode, src: std.builtin.SourceLocation, index: usize, opts: dvui.Options) void {
     var w = socket_row.BaseInput.init(src, self, index, opts);
     defer w.deinit();
-    socket_row.nameLabel(self, w.name());
+    dvui.label(@src(), "{s}", .{w.name()}, .{});
 }
 
 /// Row for output socket `index` showing its name.
 pub fn baseOutput(self: *BaseNode, src: std.builtin.SourceLocation, index: usize, opts: dvui.Options) void {
     var w = socket_row.BaseOutput.init(src, self, index, opts);
     defer w.deinit();
-    socket_row.nameLabel(self, w.name());
+    dvui.label(@src(), "{s}", .{w.name()}, .{});
 }
 
 pub fn sideSockets(self: *const BaseNode, side: types.Side) Sockets {

@@ -104,7 +104,7 @@ pub fn graph(src: std.builtin.SourceLocation, ctx: anytype, spec: Spec(@TypeOf(c
                         };
                     },
                 };
-                if (draw_label) |f| f(ctx, row, desc) else socket_row.nameLabel(n, row.name());
+                if (draw_label) |f| f(ctx, row, desc) else dvui.label(@src(), "{s}", .{row.name()}, .{});
             }
         }
     }

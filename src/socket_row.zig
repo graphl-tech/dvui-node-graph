@@ -12,13 +12,6 @@ const BaseSocket = @import("BaseSocket.zig");
 pub const BaseInput = SocketRow(.input);
 pub const BaseOutput = SocketRow(.output);
 
-/// The socket name in the graph's `style.label` font, as drawn by `BaseNode.defaultSockets` and
-/// the declarative API.
-pub fn nameLabel(node: *const BaseNode, name: []const u8) void {
-    const font = node.graph.style().label.font orelse dvui.themeGet().font_mono.larger(-2);
-    dvui.labelEx(@src(), "{s}", .{name}, .{ .ellipsize = false }, .{ .font = font, .gravity_y = 0.5, .padding = .all(2) });
-}
-
 pub fn SocketRow(comptime side: types.Side) type {
     return struct {
         const Self = @This();

@@ -20,7 +20,6 @@ wire: Wire = .{},
 socket: Socket = .{},
 canvas: Canvas = .{},
 selection: Selection = .{},
-label: Label = .{},
 
 pub const Node = struct {
     corner_radius: f32 = 12,
@@ -162,12 +161,6 @@ pub const Selection = struct {
     /// Theme text color.
     outline: ?dvui.Color = null,
     corner_radius: f32 = 6,
-};
-
-/// Socket names drawn by `BaseNode.defaultSockets` and the declarative API.
-pub const Label = struct {
-    /// Theme monospace font, one size smaller.
-    font: ?dvui.Font = null,
 };
 
 /// The theme text color, used as the default for most strokes.

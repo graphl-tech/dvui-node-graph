@@ -170,8 +170,7 @@ fn imperativeGraph() !void {
         for (0..node.inputs.len()) |i| {
             var row = ng.BaseInput.init(@src(), node, i, .{ .id_extra = i });
             defer row.deinit();
-
-            dvui.label(@src(), "{s}", .{row.name()}, .{ .gravity_y = 0.5 });
+            dvui.label(@src(), "{s}", .{row.name()}, .{});
 
             for (row.events()) |e| switch (e) {
                 .socket => |se| switch (se) {
