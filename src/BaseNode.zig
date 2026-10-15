@@ -1,4 +1,4 @@
-//! A draggable, selectable node card. Lay out its ports with `BaseInput`/`BaseOutput` (or call
+//! A draggable, selectable node. Lay out its ports with `BaseInput`/`BaseOutput` (or call
 //! `defaultPorts`). Inputs stack in a left column and outputs in a right column; declare all
 //! inputs before any outputs.
 

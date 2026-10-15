@@ -67,15 +67,12 @@ pub fn deinit(win: *dvui.Window) void {
     edges.deinit(gpa);
 }
 
-/// Execution-order sockets: an arrow in a ring, faded until connected.
 const flow_socket: ng.Style.Socket = .{
     .icon = .{ .name = "demo_flow", .tvg = dvui.entypo.arrow_with_circle_right },
     .icon_connected = null,
     .unconnected_opacity = 0.4,
 };
 
-/// The socket an `add` node would add next: input `arity`, drawn as a "+". It is an ordinary
-/// socket; `addEdge`/`handleEvent` create the input when a wire or click lands on it.
 const plus_socket: ng.Style.Socket = .{
     .icon = .{ .name = "demo_plus", .tvg = dvui.entypo.circle_with_plus },
     .icon_connected = null,
@@ -173,6 +170,7 @@ fn imperativeGraph() !void {
         for (0..node.inputs.len()) |i| {
             var row = ng.BaseInput.init(@src(), node, i, .{ .id_extra = i });
             defer row.deinit();
+
             dvui.label(@src(), "{s}", .{row.name()}, .{ .gravity_y = 0.5 });
 
             for (row.events()) |e| switch (e) {
@@ -190,8 +188,7 @@ fn imperativeGraph() !void {
         if (n.kind == .number) {
             var row = ng.BaseOutput.init(@src(), node, 0, .{});
             defer row.deinit();
-            // narrower than dvui's default; a plain .min_size_content would also cap the height
-            _ = dvui.textEntryNumber(@src(), f32, .{ .value = &n.value }, (dvui.Options{ .gravity_y = 0.5 }).min_sizeM(5, 1));
+            _ = dvui.textEntryNumber(@src(), f32, .{ .value = &n.value }, (dvui.Options{ .gravity_y = 0.5 }));
         } else {
             for (0..node.outputs.len()) |i| node.baseOutput(@src(), i, .{ .id_extra = i });
         }

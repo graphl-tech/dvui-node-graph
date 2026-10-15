@@ -1,16 +1,11 @@
 const std = @import("std");
 
 pub fn build(b: *std.Build) void {
-    // The library module has no `dvui` import: a program must contain exactly one dvui, so the
-    // consumer adds their own:
-    //
-    //     const ng = b.dependency("dvui_node_graph", .{}).module("dvui_node_graph");
-    //     ng.addImport("dvui", my_dvui_module);
     _ = b.addModule("dvui_node_graph", .{ .root_source_file = b.path("src/dvui_node_graph.zig") });
-
-    // The demo and tests pin their own dvui. Only set them up when this package is the root of
-    // the build, so consumers never fetch or configure that dvui (or its SDL3).
-    if (b.dep_prefix.len != 0) return;
+    // Only set up dvui+sdl3 dep when we are the root (e.g. testing), not a dependency
+    // FIXME: check if the lazy dependency is installed in edge cases
+    const is_build_root = b.dep_prefix.len == 0;
+    if (!is_build_root) return;
     devSteps(b);
 }
 
@@ -23,12 +18,12 @@ fn devSteps(b: *std.Build) void {
 
     const dvui_sdl3_dep = b.lazyDependency("dvui", .{ .target = target, .optimize = optimize, .backend = .sdl3 }) orelse return;
     const dvui_testing_dep = b.lazyDependency("dvui", .{ .target = target, .optimize = optimize, .backend = .testing }) orelse return;
-    // One library module per dvui backend, shared by everything built against that backend.
     const sdl3: Backend = .init(b, target, optimize, dvui_sdl3_dep.module("dvui_sdl3"));
     const testing: Backend = .init(b, target, optimize, dvui_testing_dep.module("dvui_testing"));
 
     // demo
     {
+        const demo_step = b.step("demo", "Run the SDL3 demo");
         const demo = b.addExecutable(.{
             .name = "dvui-node-graph-demo",
             .root_module = sdl3.module(b, "examples/demo.zig"),
@@ -38,27 +33,26 @@ fn devSteps(b: *std.Build) void {
         const run = b.addRunArtifact(demo);
         run.step.dependOn(&install.step);
         if (b.args) |args| run.addArgs(args);
-        b.step("demo", "Run the SDL3 demo").dependOn(&run.step);
+        demo_step.dependOn(&run.step);
     }
 
-    // `zig build test`: unit tests + headless interaction tests (dvui testing backend)
     {
         const test_step = b.step("test", "Run tests (headless)");
-        const tests = b.addTest(.{
-            .name = "dvui-node-graph-test",
+        const e2e_tests = b.addTest(.{
+            .name = "dvui-node-graph-test-e2e",
             .root_module = testing.tests(b, false),
             .filters = test_filters,
         });
-        const run = b.addRunArtifact(tests);
+        const run = b.addRunArtifact(e2e_tests);
         run.has_side_effects = true;
         test_step.dependOn(&run.step);
 
-        const unit = b.addTest(.{ .name = "dvui-node-graph-unit", .root_module = testing.lib, .filters = test_filters });
-        test_step.dependOn(&b.addRunArtifact(unit).step);
+        const unit_tests = b.addTest(.{ .name = "dvui-node-graph-unit", .root_module = testing.lib, .filters = test_filters });
+        test_step.dependOn(&b.addRunArtifact(unit_tests).step);
     }
 
-    // `zig build test-images`: same tests on sdl3, writing PNGs to snapshots/images
     {
+        const test_images_step = b.step("test-images", "Render snapshot tests to PNGs in snapshots/images");
         const tests = b.addTest(.{
             .name = "dvui-node-graph-test-images",
             .root_module = sdl3.tests(b, true),
@@ -66,7 +60,7 @@ fn devSteps(b: *std.Build) void {
         });
         const run = b.addRunArtifact(tests);
         run.has_side_effects = true;
-        b.step("test-images", "Render snapshot tests to PNGs in snapshots/images").dependOn(&run.step);
+        test_images_step.dependOn(&run.step);
     }
 }
 
@@ -86,7 +80,6 @@ const Backend = struct {
         return .{ .target = target, .optimize = optimize, .dvui = dvui, .lib = lib };
     }
 
-    /// A module rooted at `root` that can import `dvui` and `dvui_node_graph`.
     fn module(self: Backend, b: *std.Build, root: []const u8) *std.Build.Module {
         const m = b.createModule(.{
             .root_source_file = b.path(root),
@@ -98,7 +91,7 @@ const Backend = struct {
         return m;
     }
 
-    /// The interaction tests, which also drive the demo.
+    /// e2e tests, which also drive the demo.
     fn tests(self: Backend, b: *std.Build, images: bool) *std.Build.Module {
         const m = self.module(b, "src/tests.zig");
         m.addImport("demo", self.module(b, "examples/demo.zig"));
