@@ -9,17 +9,17 @@ const types = @import("types.zig");
 const BaseNode = @import("BaseNode.zig");
 const BaseSocket = @import("BaseSocket.zig");
 
-pub const BaseInput = PortWidget(.input);
-pub const BaseOutput = PortWidget(.output);
+pub const BaseInput = SocketRow(.input);
+pub const BaseOutput = SocketRow(.output);
 
-/// The port name in the graph's `style.label` font, as drawn by `BaseNode.defaultPorts` and the
-/// declarative API.
+/// The socket name in the graph's `style.label` font, as drawn by `BaseNode.defaultSockets` and
+/// the declarative API.
 pub fn nameLabel(node: *const BaseNode, name: []const u8) void {
     const font = node.graph.style().label.font orelse dvui.themeGet().font_mono.larger(-2);
     dvui.labelEx(@src(), "{s}", .{name}, .{ .ellipsize = false }, .{ .font = font, .gravity_y = 0.5, .padding = .all(2) });
 }
 
-pub fn PortWidget(comptime side: types.Side) type {
+pub fn SocketRow(comptime side: types.Side) type {
     return struct {
         const Self = @This();
 
@@ -29,7 +29,7 @@ pub fn PortWidget(comptime side: types.Side) type {
         };
 
         pub const InitOptions = struct {
-            /// Overrides the port's `styles`/`colors` columns and the socket defaults.
+            /// Overrides the socket's `styles`/`colors` columns and the socket defaults.
             socket: ?BaseSocket.InitOptions = null,
             /// dvui options for the socket widget (e.g. `.tag`).
             socket_opts: dvui.Options = .{},
@@ -52,14 +52,14 @@ pub fn PortWidget(comptime side: types.Side) type {
         pub fn initEx(src: std.builtin.SourceLocation, node: *BaseNode, index: usize, init_opts: InitOptions, opts: dvui.Options) *Self {
             const self = dvui.widgetAlloc(Self);
             self.* = .{ .node = node, .index = index };
-            const ps = self.ports();
+            const ss = self.sockets();
             node.beginColumn(side);
 
             const gravity_x: f32 = if (side == .output) 1 else 0;
             const defaults: dvui.Options = .{ .expand = .horizontal, .gravity_x = gravity_x };
             self.row.init(src, .{ .dir = .horizontal }, defaults.override(opts));
 
-            const socket_opts = init_opts.socket orelse BaseSocket.InitOptions{ .style = ps.style(index), .color = ps.color(index) };
+            const socket_opts = init_opts.socket orelse BaseSocket.InitOptions{ .style = ss.style(index), .color = ss.color(index) };
             var socket = BaseSocket.init(@src(), node.graph, self.socketId(), socket_opts, init_opts.socket_opts);
             const socket_events = socket.events();
             self.socket_hovered = socket.hovered();
@@ -78,8 +78,8 @@ pub fn PortWidget(comptime side: types.Side) type {
             return self;
         }
 
-        pub fn ports(self: *const Self) types.Ports {
-            return self.node.sidePorts(side);
+        pub fn sockets(self: *const Self) types.Sockets {
+            return self.node.sideSockets(side);
         }
 
         pub fn events(self: *const Self) []const Event {
@@ -87,11 +87,11 @@ pub fn PortWidget(comptime side: types.Side) type {
         }
 
         pub fn socketId(self: *const Self) types.SocketId {
-            return self.ports().socketId(self.node.id, self.index);
+            return self.sockets().socketId(self.node.id, self.index);
         }
 
         pub fn name(self: *const Self) []const u8 {
-            return self.ports().names[self.index];
+            return self.sockets().names[self.index];
         }
 
         pub fn deinit(self: *Self) void {

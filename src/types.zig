@@ -80,58 +80,58 @@ pub const Edge = struct {
     }
 };
 
-/// The inputs or the outputs of one node, as a struct of arrays. `names` sets the port count;
-/// every other column is optional and may be left empty to use its default for all ports.
-pub const Ports = struct {
+/// The input or the output sockets of one node, as a struct of arrays. `names` sets the socket
+/// count; every other column is optional and may be left empty to use its default for all sockets.
+pub const Sockets = struct {
     side: Side,
     names: []const []const u8 = &.{},
-    /// Socket of each port. Empty means positional: port `i` is socket `(side, i)`.
-    sockets: []const Socket = &.{},
+    /// Id of each socket. Empty means positional: socket `i` is `(side, i)`.
+    ids: []const Socket = &.{},
     colors: []const ?dvui.Color = &.{},
-    /// Per-port socket look (icons, ...); null uses the graph's `style.socket`.
+    /// Per-socket look (icons, ...); null uses the graph's `style.socket`.
     styles: []const ?Style.Socket = &.{},
 
-    pub fn none(side: Side) Ports {
+    pub fn none(side: Side) Sockets {
         return .{ .side = side };
     }
 
-    pub fn len(self: Ports) usize {
+    pub fn len(self: Sockets) usize {
         return self.names.len;
     }
 
-    pub fn socket(self: Ports, i: usize) Socket {
-        return if (i < self.sockets.len) self.sockets[i] else .{ .side = self.side, .index = @intCast(i) };
+    pub fn socket(self: Sockets, i: usize) Socket {
+        return if (i < self.ids.len) self.ids[i] else .{ .side = self.side, .index = @intCast(i) };
     }
 
-    pub fn socketId(self: Ports, node: NodeId, i: usize) SocketId {
+    pub fn socketId(self: Sockets, node: NodeId, i: usize) SocketId {
         return .{ .node = node, .socket = self.socket(i) };
     }
 
-    pub fn style(self: Ports, i: usize) ?Style.Socket {
+    pub fn style(self: Sockets, i: usize) ?Style.Socket {
         return if (i < self.styles.len) self.styles[i] else null;
     }
 
-    pub fn color(self: Ports, i: usize) ?dvui.Color {
+    pub fn color(self: Sockets, i: usize) ?dvui.Color {
         return if (i < self.colors.len) self.colors[i] else null;
     }
 
-    /// Index of the port using `s`, if any.
-    pub fn indexOf(self: Ports, s: Socket) ?usize {
+    /// Index of the socket `s`, if any.
+    pub fn indexOf(self: Sockets, s: Socket) ?usize {
         for (0..self.len()) |i| if (self.socket(i).eql(s)) return i;
         return null;
     }
 };
 
-/// One side's ports from either a `Ports` or a struct type whose fields become ports in
+/// One side's sockets from either a `Sockets` or a struct type whose fields become sockets in
 /// declaration order.
-pub fn ports(comptime side: Side, from: anytype) Ports {
-    if (@TypeOf(from) == Ports) return from;
-    if (@TypeOf(from) != type) @compileError("expected a struct type or Ports, found " ++ @typeName(@TypeOf(from)));
-    return comptime portsOfType(from, side);
+pub fn sockets(comptime side: Side, from: anytype) Sockets {
+    if (@TypeOf(from) == Sockets) return from;
+    if (@TypeOf(from) != type) @compileError("expected a struct type or Sockets, found " ++ @typeName(@TypeOf(from)));
+    return comptime socketsOfType(from, side);
 }
 
-/// Ports named after the fields of a struct type. Usable at comptime.
-pub fn portsOfType(comptime T: type, comptime side: Side) Ports {
+/// Sockets named after the fields of a struct type. Usable at comptime.
+pub fn socketsOfType(comptime T: type, comptime side: Side) Sockets {
     const S = struct {
         const fields = @typeInfo(T).@"struct".fields;
         const names = blk: {
@@ -144,26 +144,26 @@ pub fn portsOfType(comptime T: type, comptime side: Side) Ports {
     return .{ .side = side, .names = &S.names };
 }
 
-test ports {
-    const ps = ports(.input, struct { x: i32, s: []const u8, b: bool });
+test sockets {
+    const ps = sockets(.input, struct { x: i32, s: []const u8, b: bool });
     try std.testing.expectEqual(3, ps.len());
     try std.testing.expectEqualStrings("x", ps.names[0]);
     try std.testing.expect(ps.socket(2).eql(.input(2)));
-    try std.testing.expectEqual(1, ports(.output, Ports{ .side = .output, .names = &.{"a"} }).len());
+    try std.testing.expectEqual(1, sockets(.output, Sockets{ .side = .output, .names = &.{"a"} }).len());
 }
 
-test portsOfType {
-    const ps = comptime portsOfType(struct { a: f32, b: u8 }, .output);
+test socketsOfType {
+    const ps = comptime socketsOfType(struct { a: f32, b: u8 }, .output);
     try std.testing.expectEqual(2, ps.len());
     try std.testing.expectEqualStrings("b", ps.names[1]);
     try std.testing.expect(ps.socket(1).eql(.output(1)));
 }
 
-test "Ports with explicit sockets" {
-    const ps: Ports = .{
+test "Sockets with explicit ids" {
+    const ps: Sockets = .{
         .side = .input,
         .names = &.{ "exec", "value" },
-        .sockets = &.{ .input(0), .input(7) },
+        .ids = &.{ .input(0), .input(7) },
         .colors = &.{dvui.Color.black},
     };
     try std.testing.expect(ps.socket(1).eql(.input(7)));

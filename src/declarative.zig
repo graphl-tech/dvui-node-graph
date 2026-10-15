@@ -16,26 +16,26 @@ const types = @import("types.zig");
 const GraphWidget = @import("GraphWidget.zig");
 const BaseNode = @import("BaseNode.zig");
 const BaseSocket = @import("BaseSocket.zig");
-const ports = @import("ports.zig");
+const socket_row = @import("socket_row.zig");
 
 const NodeId = types.NodeId;
-const Ports = types.Ports;
+const Sockets = types.Sockets;
 const SocketId = types.SocketId;
 
 pub const Node = struct {
     id: NodeId,
     title: ?[]const u8 = null,
-    inputs: Ports = .none(.input),
-    outputs: Ports = .none(.output),
+    inputs: Sockets = .none(.input),
+    outputs: Sockets = .none(.output),
     /// Initial position; afterwards `graph` remembers where the user dragged it.
     position: dvui.Point = .{},
 };
 
-/// A node "type" whose ports come from the fields of two struct types.
+/// A node "type" whose sockets come from the fields of two struct types.
 pub fn NodeType(comptime Inputs: type, comptime Outputs: type) type {
     return struct {
-        pub const inputs = types.portsOfType(Inputs, .input);
-        pub const outputs = types.portsOfType(Outputs, .output);
+        pub const inputs = types.socketsOfType(Inputs, .input);
+        pub const outputs = types.socketsOfType(Outputs, .output);
 
         pub fn node(id: NodeId, title: ?[]const u8) Node {
             return .{ .id = id, .title = title, .inputs = inputs, .outputs = outputs };
@@ -57,8 +57,8 @@ pub fn Spec(comptime Ctx: type) type {
         /// Replace the default title row.
         draw_node_title: ?*const fn (ctx: Ctx, node: *BaseNode, desc: Node) void = null,
         /// Replace the name label of an input row; draw into the row (it is the current parent).
-        draw_input_label: ?*const fn (ctx: Ctx, row: *ports.BaseInput, desc: Node) void = null,
-        draw_output_label: ?*const fn (ctx: Ctx, row: *ports.BaseOutput, desc: Node) void = null,
+        draw_input_label: ?*const fn (ctx: Ctx, row: *socket_row.BaseInput, desc: Node) void = null,
+        draw_output_label: ?*const fn (ctx: Ctx, row: *socket_row.BaseOutput, desc: Node) void = null,
         /// Every event from every socket.
         on_socket_event: ?*const fn (ctx: Ctx, socket: SocketId, event: BaseSocket.Event) void = null,
         /// Shorthand for `on_socket_event` filtered to clicks.
@@ -88,7 +88,7 @@ pub fn graph(src: std.builtin.SourceLocation, ctx: anytype, spec: Spec(@TypeOf(c
 
         if (spec.draw_node_title) |f| f(ctx, n, desc) else if (desc.title) |t| n.titleLabel("{s}", .{t});
 
-        inline for (.{ ports.BaseInput, ports.BaseOutput }, .{ desc.inputs, desc.outputs }, .{ spec.draw_input_label, spec.draw_output_label }) |Row, list, draw_label| {
+        inline for (.{ socket_row.BaseInput, socket_row.BaseOutput }, .{ desc.inputs, desc.outputs }, .{ spec.draw_input_label, spec.draw_output_label }) |Row, list, draw_label| {
             for (0..list.len()) |i| {
                 var row = Row.init(@src(), n, i, .{ .id_extra = i });
                 defer row.deinit();
@@ -104,7 +104,7 @@ pub fn graph(src: std.builtin.SourceLocation, ctx: anytype, spec: Spec(@TypeOf(c
                         };
                     },
                 };
-                if (draw_label) |f| f(ctx, row, desc) else ports.nameLabel(n, row.name());
+                if (draw_label) |f| f(ctx, row, desc) else socket_row.nameLabel(n, row.name());
             }
         }
     }

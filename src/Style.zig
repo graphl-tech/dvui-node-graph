@@ -91,7 +91,7 @@ pub const Icon = struct {
     tvg: []const u8,
 };
 
-/// Look and sizing of sockets. Override per port with `Ports.styles` or per socket with
+/// Look and sizing of sockets. Override per socket with `Sockets.styles` or
 /// `BaseSocket.InitOptions.style`. Size and proximity fields are read from the graph's style.
 pub const Socket = struct {
     /// Graph units at full proximity scale.
@@ -164,7 +164,7 @@ pub const Selection = struct {
     corner_radius: f32 = 6,
 };
 
-/// Port names drawn by `BaseNode.defaultPorts` and the declarative API.
+/// Socket names drawn by `BaseNode.defaultSockets` and the declarative API.
 pub const Label = struct {
     /// Theme monospace font, one size smaller.
     font: ?dvui.Font = null,

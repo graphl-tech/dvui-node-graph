@@ -81,7 +81,7 @@ const plus_socket: ng.Style.Socket = .{
 
 const letters = [_][]const u8{ "a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m", "n", "o", "p", "q", "r", "s", "t", "u", "v", "w", "x", "y", "z" };
 
-fn inputsOf(n: *const Node) !ng.Ports {
+fn inputsOf(n: *const Node) !ng.Sockets {
     return switch (n.kind) {
         .number => .none(.input),
         .add => blk: {
@@ -121,9 +121,9 @@ fn addEdge(edge: ng.Edge) !void {
     if (!hasEdge(edge)) try edges.append(gpa, edge);
 }
 
-fn outputsOf(kind: Kind) ng.Ports {
+fn outputsOf(kind: Kind) ng.Sockets {
     return switch (kind) {
-        .number, .add => comptime ng.portsOfType(struct { value: f32 }, .output),
+        .number, .add => comptime ng.socketsOfType(struct { value: f32 }, .output),
         .print => .{ .side = .output, .names = &.{"then"}, .styles = &.{flow_socket} },
     };
 }
