@@ -87,8 +87,6 @@ pub const Ports = struct {
     names: []const []const u8 = &.{},
     /// Socket of each port. Empty means positional: port `i` is socket `(side, i)`.
     sockets: []const Socket = &.{},
-    /// Formatted literal values (e.g. "5" for `.{ .x = 5 }`).
-    values: []const ?[]const u8 = &.{},
     colors: []const ?dvui.Color = &.{},
     /// Per-port socket look (icons, ...); null uses the graph's `style.socket`.
     styles: []const ?Style.Socket = &.{},
@@ -109,10 +107,6 @@ pub const Ports = struct {
         return .{ .node = node, .socket = self.socket(i) };
     }
 
-    pub fn value(self: Ports, i: usize) ?[]const u8 {
-        return if (i < self.values.len) self.values[i] else null;
-    }
-
     pub fn style(self: Ports, i: usize) ?Style.Socket {
         return if (i < self.styles.len) self.styles[i] else null;
     }
@@ -128,23 +122,15 @@ pub const Ports = struct {
     }
 };
 
-/// Build one side's ports from either a `Ports` or a struct value whose fields become ports in
-/// declaration order. Allocates from `alloc` (normally the dvui arena).
-pub fn ports(alloc: std.mem.Allocator, comptime side: Side, from: anytype) std.mem.Allocator.Error!Ports {
-    const T = @TypeOf(from);
-    if (T == Ports) return from;
-    if (@typeInfo(T) != .@"struct") @compileError("expected a struct value or Ports, found " ++ @typeName(T));
-
-    const fields = @typeInfo(T).@"struct".fields;
-    const meta = comptime portsOfType(T, side);
-    const values = try alloc.alloc(?[]const u8, fields.len);
-    inline for (fields, 0..) |f, i| values[i] = try formatValue(alloc, @field(from, f.name));
-    var out = meta;
-    out.values = values;
-    return out;
+/// One side's ports from either a `Ports` or a struct type whose fields become ports in
+/// declaration order.
+pub fn ports(comptime side: Side, from: anytype) Ports {
+    if (@TypeOf(from) == Ports) return from;
+    if (@TypeOf(from) != type) @compileError("expected a struct type or Ports, found " ++ @typeName(@TypeOf(from)));
+    return comptime portsOfType(from, side);
 }
 
-/// Ports named after the fields of a struct *type* (no values). Usable at comptime.
+/// Ports named after the fields of a struct type. Usable at comptime.
 pub fn portsOfType(comptime T: type, comptime side: Side) Ports {
     const S = struct {
         const fields = @typeInfo(T).@"struct".fields;
@@ -158,34 +144,12 @@ pub fn portsOfType(comptime T: type, comptime side: Side) Ports {
     return .{ .side = side, .names = &S.names };
 }
 
-fn formatValue(alloc: std.mem.Allocator, v: anytype) std.mem.Allocator.Error!?[]const u8 {
-    const V = @TypeOf(v);
-    return switch (@typeInfo(V)) {
-        .void, .null, .undefined => null,
-        .int, .comptime_int, .float, .comptime_float => try std.fmt.allocPrint(alloc, "{d}", .{v}),
-        .bool => if (v) "true" else "false",
-        .@"enum", .enum_literal => @tagName(v),
-        .optional => if (v) |inner| try formatValue(alloc, inner) else null,
-        .pointer => |p| if (p.size == .slice and p.child == u8)
-            try std.fmt.allocPrint(alloc, "\"{s}\"", .{v})
-        else if (p.size == .one and @typeInfo(p.child) == .array and @typeInfo(p.child).array.child == u8)
-            try std.fmt.allocPrint(alloc, "\"{s}\"", .{v})
-        else
-            null,
-        else => null,
-    };
-}
-
 test ports {
-    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena_state.deinit();
-    const ps = try ports(arena_state.allocator(), .input, .{ .x = @as(i32, 5), .s = @as([]const u8, "hi"), .b = true });
+    const ps = ports(.input, struct { x: i32, s: []const u8, b: bool });
     try std.testing.expectEqual(3, ps.len());
     try std.testing.expectEqualStrings("x", ps.names[0]);
-    try std.testing.expectEqualStrings("5", ps.value(0).?);
-    try std.testing.expectEqualStrings("\"hi\"", ps.value(1).?);
-    try std.testing.expectEqualStrings("true", ps.value(2).?);
     try std.testing.expect(ps.socket(2).eql(.input(2)));
+    try std.testing.expectEqual(1, ports(.output, Ports{ .side = .output, .names = &.{"a"} }).len());
 }
 
 test portsOfType {

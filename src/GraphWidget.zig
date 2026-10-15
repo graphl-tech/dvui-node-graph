@@ -13,7 +13,7 @@
 //!
 //! Wire drags belong to the graph rather than to a socket widget: pressing a socket captures the
 //! mouse to the canvas, so the drag survives the pressed widget disappearing (see
-//! `BaseSocket.InitOptions.wire_source`).
+//! `pressSocket`).
 
 const std = @import("std");
 const builtin = @import("builtin");
@@ -447,7 +447,7 @@ fn queueSocketEvent(self: *GraphWidget, s: SocketId, e: BaseSocket.Event) void {
 // ---------------------------------------------------------------------------------------------
 
 /// Begin a node at `position` (graph space, written by drags) whose ports are derived from
-/// `inputs`/`outputs` (struct values or `Ports`). The caller lays out its ports (see
+/// `inputs`/`outputs` (struct types or `Ports`). The caller lays out its ports (see
 /// `BaseInput`/`BaseOutput`) and must `deinit` it.
 pub fn node(self: *GraphWidget, src: std.builtin.SourceLocation, node_id: NodeId, position: *dvui.Point, inputs: anytype, outputs: anytype, init_opts: BaseNode.InitOptions, opts: dvui.Options) *BaseNode {
     return BaseNode.init(src, self, node_id, position, inputs, outputs, init_opts, opts);

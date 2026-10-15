@@ -56,7 +56,7 @@ pub fn Spec(comptime Ctx: type) type {
         graph: GraphWidget.InitOptions = .{},
         /// Replace the default title row.
         draw_node_title: ?*const fn (ctx: Ctx, node: *BaseNode, desc: Node) void = null,
-        /// Replace the default label of an input row; draw into the row (it is the current parent).
+        /// Replace the name label of an input row; draw into the row (it is the current parent).
         draw_input_label: ?*const fn (ctx: Ctx, row: *ports.BaseInput, desc: Node) void = null,
         draw_output_label: ?*const fn (ctx: Ctx, row: *ports.BaseOutput, desc: Node) void = null,
         /// Every event from every socket.
@@ -104,7 +104,7 @@ pub fn graph(src: std.builtin.SourceLocation, ctx: anytype, spec: Spec(@TypeOf(c
                         };
                     },
                 };
-                if (draw_label) |f| f(ctx, row, desc) else row.defaultLabel();
+                if (draw_label) |f| f(ctx, row, desc) else ports.nameLabel(n, row.name());
             }
         }
     }

@@ -164,12 +164,10 @@ pub const Selection = struct {
     corner_radius: f32 = 6,
 };
 
-/// Default port labels (`BaseInput.defaultLabel` / `BaseOutput.defaultLabel`).
+/// Port names drawn by `BaseNode.defaultPorts` and the declarative API.
 pub const Label = struct {
     /// Theme monospace font, one size smaller.
     font: ?dvui.Font = null,
-    /// Opacity of an input's literal value shown beside its name.
-    value_opacity: f32 = 0.6,
 };
 
 /// The theme text color, used as the default for most strokes.

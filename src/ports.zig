@@ -8,10 +8,16 @@ const dvui = @import("dvui");
 const types = @import("types.zig");
 const BaseNode = @import("BaseNode.zig");
 const BaseSocket = @import("BaseSocket.zig");
-const draw = @import("draw.zig");
 
 pub const BaseInput = PortWidget(.input);
 pub const BaseOutput = PortWidget(.output);
+
+/// The port name in the graph's `style.label` font, as drawn by `BaseNode.defaultPorts` and the
+/// declarative API.
+pub fn nameLabel(node: *const BaseNode, name: []const u8) void {
+    const font = node.graph.style().label.font orelse dvui.themeGet().font_mono.larger(-2);
+    dvui.labelEx(@src(), "{s}", .{name}, .{ .ellipsize = false }, .{ .font = font, .gravity_y = 0.5, .padding = .all(2) });
+}
 
 pub fn PortWidget(comptime side: types.Side) type {
     return struct {
@@ -86,25 +92,6 @@ pub fn PortWidget(comptime side: types.Side) type {
 
         pub fn name(self: *const Self) []const u8 {
             return self.ports().names[self.index];
-        }
-
-        /// The port name, plus its literal value for inputs that are not connected.
-        pub fn defaultLabel(self: *Self) void {
-            const ls = self.node.graph.style().label;
-            const font = ls.font orelse dvui.themeGet().font_mono.larger(-2);
-            dvui.labelEx(@src(), "{s}", .{self.name()}, .{ .ellipsize = false }, .{ .font = font, .gravity_y = 0.5, .padding = .all(2) });
-            if (side == .input) {
-                if (self.ports().value(self.index)) |v| {
-                    if (!self.node.graph.isConnected(self.socketId())) {
-                        dvui.labelEx(@src(), "{s}", .{v}, .{ .ellipsize = false }, .{
-                            .font = font,
-                            .gravity_y = 0.5,
-                            .padding = .all(2),
-                            .color_text = draw.paint(dvui.themeGet().color(.control, .text).opacity(ls.value_opacity)),
-                        });
-                    }
-                }
-            }
         }
 
         pub fn deinit(self: *Self) void {

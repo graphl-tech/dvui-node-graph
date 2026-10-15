@@ -45,7 +45,7 @@ fn imperativeFrame() anyerror!dvui.App.Result {
     defer graph.deinit();
 
     {
-        var node = graph.node(@src(), 1, &fx.node1_pos, struct { x: i32 }{ .x = 5 }, struct { s: []const u8 }{ .s = "" }, .{
+        var node = graph.node(@src(), 1, &fx.node1_pos, struct { x: i32 }, struct { s: []const u8 }, .{
             .title = "one",
         }, .{ .tag = "node-1" });
         defer node.deinit();
@@ -53,16 +53,16 @@ fn imperativeFrame() anyerror!dvui.App.Result {
         for (0..node.outputs.len()) |i| {
             var row = ng.BaseOutput.initEx(@src(), node, i, .{ .socket_opts = .{ .tag = "out-1-0" } }, .{ .id_extra = i });
             defer row.deinit();
-            row.defaultLabel();
+            dvui.label(@src(), "{s}", .{row.name()}, .{});
         }
     }
 
-    graph.baseNodeEx(@src(), 3, &fx.node3_pos, struct { a: bool, b: f32 }{ .a = true, .b = 1.5 }, struct { c: u8 }{ .c = 0 }, .{
+    graph.baseNodeEx(@src(), 3, &fx.node3_pos, struct { a: bool, b: f32 }, struct { c: u8 }, .{
         .title = "three",
     }, .{ .tag = "node-3" });
 
     {
-        var node = graph.node(@src(), 2, &fx.node2_pos, struct { s: []const u8 }{ .s = "" }, struct { out: f32 }{ .out = 0 }, .{
+        var node = graph.node(@src(), 2, &fx.node2_pos, struct { s: []const u8 }, struct { out: f32 }, .{
             .title = "two",
         }, .{ .tag = "node-2" });
         defer node.deinit();
@@ -79,7 +79,7 @@ fn imperativeFrame() anyerror!dvui.App.Result {
         for (0..node.outputs.len()) |i| {
             var row = ng.BaseOutput.initEx(@src(), node, i, .{ .socket_opts = .{ .tag = "out-2-0" } }, .{ .id_extra = i });
             defer row.deinit();
-            row.defaultLabel();
+            dvui.label(@src(), "{s}", .{row.name()}, .{});
         }
     }
 
@@ -337,10 +337,10 @@ fn readmeFrame() anyerror!dvui.App.Result {
     defer graph.deinit();
 
     // a default node
-    graph.baseNode(@src(), 1, &model.positions[0], struct { x: i32 }{ .x = 5 }, struct { s: []const u8 }{ .s = "" });
+    graph.baseNode(@src(), 1, &model.positions[0], struct { x: i32 }, struct { s: []const u8 });
 
     {
-        var node = graph.node(@src(), 2, &model.positions[1], struct { s: []const u8 }{ .s = "" }, struct {}{}, .{ .title = "two" }, .{});
+        var node = graph.node(@src(), 2, &model.positions[1], struct { s: []const u8 }, struct {}, .{ .title = "two" }, .{});
         defer node.deinit();
 
         for (0..node.inputs.len()) |i| {
@@ -417,14 +417,14 @@ const PlusFixture = struct {
         defer graph.deinit();
 
         {
-            var node = graph.node(@src(), 1, &positions[0], struct {}{}, struct { out: i32 }{ .out = 0 }, .{}, .{ .tag = "pn-1" });
+            var node = graph.node(@src(), 1, &positions[0], struct {}, struct { out: i32 }, .{}, .{ .tag = "pn-1" });
             defer node.deinit();
             var row = ng.BaseOutput.initEx(@src(), node, 0, .{ .socket_opts = .{ .tag = "pn-out" } }, .{});
             defer row.deinit();
-            row.defaultLabel();
+            dvui.label(@src(), "{s}", .{row.name()}, .{});
         }
         {
-            var node = graph.node(@src(), 2, &positions[1], struct { a: i32 }{ .a = 0 }, struct {}{}, .{}, .{ .tag = "pn-2" });
+            var node = graph.node(@src(), 2, &positions[1], struct { a: i32 }, struct {}, .{}, .{ .tag = "pn-2" });
             defer node.deinit();
             node.baseInput(@src(), 0, .{});
             // floats left of the card, not part of the layout

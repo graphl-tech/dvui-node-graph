@@ -56,17 +56,7 @@ pub fn init(
     opts: dvui.Options,
 ) *BaseNode {
     const self = dvui.widgetAlloc(BaseNode);
-    const arena = dvui.currentWindow().arena();
-    self.initInPlace(
-        src,
-        graph,
-        id,
-        position,
-        types.ports(arena, .input, inputs) catch .none(.input),
-        types.ports(arena, .output, outputs) catch .none(.output),
-        init_opts,
-        opts,
-    );
+    self.initInPlace(src, graph, id, position, types.ports(.input, inputs), types.ports(.output, outputs), init_opts, opts);
     return self;
 }
 
@@ -125,7 +115,7 @@ pub fn initInPlace(
     const defaults: dvui.Options = .{
         .name = "Node",
         .rect = .{ .x = @round(self.position.x), .y = @round(self.position.y) },
-        .id_extra = @truncate(id),
+        .id_extra = @intCast(id),
         .margin = .all(ns.padding),
         .padding = .all(ns.padding),
         .corners = .all(ns.corner_radius),
@@ -170,24 +160,24 @@ pub fn beginColumn(self: *BaseNode, side: types.Side) void {
     self.column_side = side;
 }
 
-/// Render every input and output with default labels.
+/// Render every input and output with its name.
 pub fn defaultPorts(self: *BaseNode) void {
     for (0..self.inputs.len()) |i| self.baseInput(@src(), i, .{ .id_extra = i });
     for (0..self.outputs.len()) |i| self.baseOutput(@src(), i, .{ .id_extra = i });
 }
 
-/// Default row for input port `index`.
+/// Row for input port `index` showing its name.
 pub fn baseInput(self: *BaseNode, src: std.builtin.SourceLocation, index: usize, opts: dvui.Options) void {
     var w = ports.BaseInput.init(src, self, index, opts);
     defer w.deinit();
-    w.defaultLabel();
+    ports.nameLabel(self, w.name());
 }
 
-/// Default row for output port `index`.
+/// Row for output port `index` showing its name.
 pub fn baseOutput(self: *BaseNode, src: std.builtin.SourceLocation, index: usize, opts: dvui.Options) void {
     var w = ports.BaseOutput.init(src, self, index, opts);
     defer w.deinit();
-    w.defaultLabel();
+    ports.nameLabel(self, w.name());
 }
 
 pub fn sidePorts(self: *const BaseNode, side: types.Side) Ports {

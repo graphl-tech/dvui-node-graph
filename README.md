@@ -32,10 +32,10 @@ var graph = ng.graph(@src(), .{ .style = style }, .{});
 defer graph.deinit();
 
 // a default node
-graph.baseNode(@src(), 1, &positions[0], struct { x: i32 }{ .x = 5 }, struct { s: []const u8 }{ .s = "" });
+graph.baseNode(@src(), 1, &positions[0], struct { x: i32 }, struct { s: []const u8 });
 
 {
-    var node = graph.node(@src(), 2, &positions[1], struct { s: []const u8 }{ .s = "" }, struct {}{}, .{ .title = "two" }, .{});
+    var node = graph.node(@src(), 2, &positions[1], struct { s: []const u8 }, struct {}, .{ .title = "two" }, .{});
     defer node.deinit();
 
     for (0..node.inputs.len()) |i| {
