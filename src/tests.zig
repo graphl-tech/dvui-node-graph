@@ -71,7 +71,7 @@ const Fixture = struct {
 
 var fx: Fixture = .{};
 
-fn imperativeFrame() anyerror!dvui.App.Result {
+fn graphFrame() anyerror!dvui.App.Result {
     const alloc = std.testing.allocator;
     var graph = ng.graph(@src(), .{ .view = &fx.view, .allow_same_side_links = fx.allow_same_side_links }, .{ .tag = "graph" });
     defer graph.deinit();
@@ -160,12 +160,12 @@ fn snapshotIfImages(t: *dvui.testing, src: std.builtin.SourceLocation, frame: dv
     try writer.end();
 }
 
-test "imperative graph renders and remembers node positions" {
+test "graph renders and remembers node positions" {
     var t = try initTest();
     defer t.deinit();
     defer fx.deinit();
 
-    try dvui.testing.settle(imperativeFrame);
+    try dvui.testing.settle(graphFrame);
     try dvui.testing.expectVisible("node-1");
     try dvui.testing.expectVisible("node-2");
     try dvui.testing.expectVisible("in-2-0");
@@ -180,20 +180,20 @@ test "dragging a node moves it and reports nodes_moved" {
     defer t.deinit();
     defer fx.deinit();
 
-    try dvui.testing.settle(imperativeFrame);
+    try dvui.testing.settle(graphFrame);
     const before = fx.node2_pos;
 
     try dvui.testing.moveTo("node-2");
     const cw = dvui.currentWindow();
     _ = try cw.addEventMouseButton(.left, .press);
-    _ = try dvui.testing.step(imperativeFrame);
+    _ = try dvui.testing.step(graphFrame);
     const start = cw.mouse_pt;
     for (1..5) |i| {
         _ = try cw.addEventMouseMotion(.{ .pt = start.plus(.{ .x = @floatFromInt(i * 10), .y = @floatFromInt(i * 5) }) });
-        _ = try dvui.testing.step(imperativeFrame);
+        _ = try dvui.testing.step(graphFrame);
     }
     _ = try cw.addEventMouseButton(.left, .release);
-    try dvui.testing.settle(imperativeFrame);
+    try dvui.testing.settle(graphFrame);
 
     // 40x20 physical pixels at zoom 1 is 40x20 natural pixels in graph space
     const s = cw.natural_scale;
@@ -211,7 +211,7 @@ test "box select previews while dragging and reports the boxed nodes on release"
     defer t.deinit();
     defer fx.deinit();
 
-    try dvui.testing.settle(imperativeFrame);
+    try dvui.testing.settle(graphFrame);
     const cw = dvui.currentWindow();
     const graph_rect = dvui.tagGet("graph").?.rect;
     const n3 = dvui.tagGet("node-3").?.rect;
@@ -220,16 +220,16 @@ test "box select previews while dragging and reports the boxed nodes on release"
     cw.mouse_pt = .{ .x = graph_rect.x + 4, .y = graph_rect.y + 4 };
     cw.modifiers = .lcontrol;
     _ = try cw.addEventMouseButton(.left, .press);
-    _ = try dvui.testing.step(imperativeFrame);
+    _ = try dvui.testing.step(graphFrame);
     _ = try cw.addEventMouseMotion(.{ .pt = .{ .x = n3.x + n3.w / 2, .y = n3.y + n3.h / 2 } });
-    try dvui.testing.settle(imperativeFrame);
+    try dvui.testing.settle(graphFrame);
     // nodes 1 and 3 draw selected, but nothing is selected until release
-    try snapshotIfImages(&t, @src(), imperativeFrame);
+    try snapshotIfImages(&t, @src(), graphFrame);
     try std.testing.expect(fx.selected.items.len == 0);
 
     _ = try cw.addEventMouseButton(.left, .release);
     cw.modifiers = .none;
-    try dvui.testing.settle(imperativeFrame);
+    try dvui.testing.settle(graphFrame);
     const boxed = fx.hasEvent(.box_select) orelse return error.NoBoxSelect;
     try std.testing.expectEqual(ng.GraphWidget.BoxSelectMode.include, boxed.box_select.mode);
     std.mem.sort(ng.NodeId, fx.selected.items, {}, std.sort.asc(ng.NodeId));
@@ -241,20 +241,20 @@ test "ctrl+a selects all and escape deselects" {
     defer t.deinit();
     defer fx.deinit();
 
-    try dvui.testing.settle(imperativeFrame);
+    try dvui.testing.settle(graphFrame);
     // focus the canvas
     const graph_rect = dvui.tagGet("graph").?.rect;
     dvui.currentWindow().mouse_pt = .{ .x = graph_rect.x + graph_rect.w - 10, .y = graph_rect.y + graph_rect.h - 10 };
     try dvui.testing.click(.left);
-    try dvui.testing.settle(imperativeFrame);
+    try dvui.testing.settle(graphFrame);
     try std.testing.expect(fx.hasEvent(.deselect_all) == null);
 
     try dvui.testing.pressKey(.a, .lcontrol);
-    try dvui.testing.settle(imperativeFrame);
+    try dvui.testing.settle(graphFrame);
     try std.testing.expectEqual(3, fx.selected.items.len);
 
     try dvui.testing.pressKey(.escape, .none);
-    try dvui.testing.settle(imperativeFrame);
+    try dvui.testing.settle(graphFrame);
     try std.testing.expect(fx.hasEvent(.deselect_all) != null);
     try std.testing.expectEqual(0, fx.selected.items.len);
 }
@@ -264,20 +264,20 @@ fn dragWire(t: *dvui.testing, from_tag: []const u8, to_tag: []const u8, src: std
     const cw = dvui.currentWindow();
     const target = dvui.tagGet(to_tag).?.rect.center();
     try dvui.testing.moveTo(from_tag);
-    _ = try dvui.testing.step(imperativeFrame);
+    _ = try dvui.testing.step(graphFrame);
     _ = try cw.addEventMouseButton(.left, .press);
-    _ = try dvui.testing.step(imperativeFrame);
+    _ = try dvui.testing.step(graphFrame);
     _ = try cw.addEventMouseMotion(.{ .pt = target.plus(.{ .x = -60, .y = 70 }) });
-    _ = try dvui.testing.step(imperativeFrame);
+    _ = try dvui.testing.step(graphFrame);
     _ = try cw.addEventMouseMotion(.{ .pt = target.plus(.{ .x = -60, .y = 70 }) });
-    _ = try dvui.testing.step(imperativeFrame);
-    try snapshotIfImages(t, src, imperativeFrame);
+    _ = try dvui.testing.step(graphFrame);
+    try snapshotIfImages(t, src, graphFrame);
     _ = try cw.addEventMouseMotion(.{ .pt = target });
-    _ = try dvui.testing.step(imperativeFrame);
+    _ = try dvui.testing.step(graphFrame);
     _ = try cw.addEventMouseMotion(.{ .pt = target });
-    _ = try dvui.testing.step(imperativeFrame);
+    _ = try dvui.testing.step(graphFrame);
     _ = try cw.addEventMouseButton(.left, .release);
-    try dvui.testing.settle(imperativeFrame);
+    try dvui.testing.settle(graphFrame);
 }
 
 test "dragging a wire from an output onto an input creates a link" {
@@ -285,12 +285,12 @@ test "dragging a wire from an output onto an input creates a link" {
     defer t.deinit();
     defer fx.deinit();
 
-    try dvui.testing.settle(imperativeFrame);
+    try dvui.testing.settle(graphFrame);
     try dragWire(&t, "out-1-0", "in-2-0", @src());
 
     try std.testing.expectEqual(1, fx.edges.items.len);
     try std.testing.expect(fx.edges.items[0].eql(.{ .source = .output(1, 0), .target = .input(2, 0) }));
-    try snapshotIfImages(&t, @src(), imperativeFrame);
+    try snapshotIfImages(&t, @src(), graphFrame);
 }
 
 test "output to output wires need allow_same_side_links" {
@@ -298,17 +298,17 @@ test "output to output wires need allow_same_side_links" {
     defer t.deinit();
     defer fx.deinit();
 
-    try dvui.testing.settle(imperativeFrame);
+    try dvui.testing.settle(graphFrame);
     try dragWire(&t, "out-1-0", "out-2-0", @src());
     try std.testing.expectEqual(0, fx.edges.items.len);
     try std.testing.expect(fx.hasEvent(.link_dropped) != null);
 
     fx.allow_same_side_links = true;
-    try dvui.testing.settle(imperativeFrame);
+    try dvui.testing.settle(graphFrame);
     try dragWire(&t, "out-1-0", "out-2-0", @src());
     try std.testing.expectEqual(1, fx.edges.items.len);
     try std.testing.expect(fx.edges.items[0].eql(.{ .source = .output(1, 0), .target = .output(2, 0) }));
-    try snapshotIfImages(&t, @src(), imperativeFrame);
+    try snapshotIfImages(&t, @src(), graphFrame);
 }
 
 test "clicking a socket reports a socket click event" {
@@ -316,10 +316,10 @@ test "clicking a socket reports a socket click event" {
     defer t.deinit();
     defer fx.deinit();
 
-    try dvui.testing.settle(imperativeFrame);
+    try dvui.testing.settle(graphFrame);
     try dvui.testing.moveTo("in-2-0");
     try dvui.testing.click(.left);
-    try dvui.testing.settle(imperativeFrame);
+    try dvui.testing.settle(graphFrame);
 
     var saw_click = false;
     for (fx.socket_events.items) |se| switch (se.event) {
@@ -338,7 +338,7 @@ test "dragging empty canvas pans and wheel zooms" {
     defer t.deinit();
     defer fx.deinit();
 
-    try dvui.testing.settle(imperativeFrame);
+    try dvui.testing.settle(graphFrame);
     const cw = dvui.currentWindow();
     const empty: dvui.Point.Physical = blk: {
         const g = dvui.tagGet("graph").?.rect;
@@ -346,70 +346,22 @@ test "dragging empty canvas pans and wheel zooms" {
     };
     _ = try cw.addEventMouseMotion(.{ .pt = empty });
     _ = try cw.addEventMouseButton(.left, .press);
-    _ = try dvui.testing.step(imperativeFrame);
+    _ = try dvui.testing.step(graphFrame);
     for (1..4) |i| {
         _ = try cw.addEventMouseMotion(.{ .pt = empty.plus(.{ .x = -@as(f32, @floatFromInt(i * 10)), .y = 0 }) });
-        _ = try dvui.testing.step(imperativeFrame);
+        _ = try dvui.testing.step(graphFrame);
     }
     _ = try cw.addEventMouseButton(.left, .release);
-    try dvui.testing.settle(imperativeFrame);
+    try dvui.testing.settle(graphFrame);
     try std.testing.expect(fx.view.origin.x > 10);
 
     const before = fx.view.scale;
     _ = try cw.addEventMouseWheel(120, .vertical, null);
-    try dvui.testing.settle(imperativeFrame);
+    try dvui.testing.settle(graphFrame);
     try std.testing.expect(fx.view.scale != before);
 }
 
-const Decl = struct {
-    clicks: usize = 0,
-    links: usize = 0,
-
-    const Add = ng.declarative.NodeType(struct { a: i32, b: i32 }, struct { sum: i32 });
-
-    fn onClickSocket(self: *Decl, socket: ng.SocketId, click: ng.ManagedSocket.Click) void {
-        _ = socket;
-        _ = click;
-        self.clicks += 1;
-    }
-
-    fn onEvent(self: *Decl, e: ng.GraphWidget.Event) void {
-        if (e == .link_created) self.links += 1;
-    }
-
-    fn drawInputLabel(self: *Decl, row: *ng.ManagedInput, desc: ng.declarative.Node, name: []const u8) void {
-        _ = self;
-        _ = row;
-        dvui.label(@src(), "{s}.{s}", .{ desc.title orelse "?", name }, .{});
-    }
-};
-var decl: Decl = .{};
-
-fn declarativeFrame() anyerror!dvui.App.Result {
-    _ = ng.declarative.graph(@src(), &decl, .{
-        .nodes = &.{
-            Decl.Add.nodeAt(1, "add", .{ .x = 20, .y = 20 }),
-            Decl.Add.nodeAt(2, "add2", .{ .x = 260, .y = 120 }),
-        },
-        .edges = &.{.{ .source = .output(1, 0), .target = .input(2, 0) }},
-        .draw_input_label = Decl.drawInputLabel,
-        .on_click_socket = Decl.onClickSocket,
-        .on_event = Decl.onEvent,
-    }, .{ .tag = "decl-graph" });
-    return .ok;
-}
-
-test "declarative graph renders nodes, edges and custom labels" {
-    var t = try dvui.testing.init(.{ .window_size = .{ .w = 600, .h = 400 }, .snapshot_dir = "snapshots" });
-    defer t.deinit();
-    decl = .{};
-
-    try dvui.testing.settle(declarativeFrame);
-    try dvui.testing.expectVisible("decl-graph");
-    try snapshotIfImages(&t, @src(), declarativeFrame);
-}
-
-/// Verbatim copy of the README's imperative example, kept compiling.
+/// Verbatim copy of the README's example, kept compiling.
 fn readmeFrame() anyerror!dvui.App.Result {
 
     // node positions live in your model; dragging a node writes through its pointer
@@ -446,7 +398,7 @@ fn readmeFrame() anyerror!dvui.App.Result {
             for (model.input_names, 0..) |name, i| {
                 var row = ng.ManagedInput.init(@src(), area, i, .{ .id_extra = i }); // socket .input(i)
                 defer row.deinit();
-                // anything drawn here lands next to the socket
+                // anything drawn here is next to the socket
                 dvui.label(@src(), "{s}", .{name}, .{});
 
                 for (row.events()) |e| switch (e) {
@@ -463,7 +415,7 @@ fn readmeFrame() anyerror!dvui.App.Result {
                     },
                 };
             }
-            area.managedOutput(@src(), 0, "out", .{}); // shorthand for a row with just a label
+            area.managedOutput(@src(), 0, "out", .{}); // shorthand for a output with just a label
         }
         {
             var footer = node.footer(@src(), .{});
@@ -489,7 +441,7 @@ fn readmeFrame() anyerror!dvui.App.Result {
     return .ok;
 }
 
-test "README imperative example" {
+test "README example" {
     var t = try dvui.testing.init(.{ .window_size = .{ .w = 600, .h = 400 } });
     defer t.deinit();
     try dvui.testing.settle(readmeFrame);
@@ -619,6 +571,9 @@ test "a socket the model doesn't have yet works both ways" {
 }
 
 fn styledFrame() anyerror!dvui.App.Result {
+    const positions = struct {
+        var p = [_]dvui.Point{ .{ .x = 20, .y = 20 }, .{ .x = 260, .y = 120 } };
+    };
     var style = ng.Style.default;
     style.node.corner_radius = 0;
     style.node.shadow = null;
@@ -627,21 +582,18 @@ fn styledFrame() anyerror!dvui.App.Result {
     style.edge.thickness = 4;
     style.canvas.grid = null;
     style.canvas.vignette = null;
-    _ = ng.declarative.graph(@src(), &decl, .{
-        .nodes = &.{
-            Decl.Add.nodeAt(1, "add", .{ .x = 20, .y = 20 }),
-            Decl.Add.nodeAt(2, "add2", .{ .x = 260, .y = 120 }),
-        },
-        .edges = &.{.{ .source = .output(1, 0), .target = .input(2, 0) }},
-        .graph = .{ .style = style },
-    }, .{ .tag = "styled-graph" });
+
+    var graph = ng.graph(@src(), .{ .style = style }, .{ .tag = "styled-graph" });
+    defer graph.deinit();
+    graph.managedNodeEx(@src(), 1, &positions.p[0], struct { a: i32, b: i32 }, struct { sum: i32 }, .{ .title = "add" }, .{});
+    graph.managedNodeEx(@src(), 2, &positions.p[1], struct { a: i32, b: i32 }, struct { sum: i32 }, .{ .title = "add2" }, .{});
+    _ = graph.link(1, .output(0), 2, .input(0));
     return .ok;
 }
 
 test "style overrides render" {
     var t = try dvui.testing.init(.{ .window_size = .{ .w = 600, .h = 400 }, .snapshot_dir = "snapshots" });
     defer t.deinit();
-    decl = .{};
     try dvui.testing.settle(styledFrame);
     try dvui.testing.expectVisible("styled-graph");
     try snapshotIfImages(&t, @src(), styledFrame);
@@ -699,24 +651,24 @@ test "demo: the add node's + adds inputs" {
 
 fn clickTag(tag: []const u8) !void {
     try dvui.testing.moveTo(tag);
-    _ = try dvui.testing.step(imperativeFrame);
+    _ = try dvui.testing.step(graphFrame);
     try dvui.testing.click(.left);
-    try dvui.testing.settle(imperativeFrame);
+    try dvui.testing.settle(graphFrame);
 }
 
 test "click-to-link: click two sockets to link them; other clicks drop the selection" {
     var t = try initTest();
     defer t.deinit();
     defer fx.deinit();
-    try dvui.testing.settle(imperativeFrame);
+    try dvui.testing.settle(graphFrame);
 
     try clickTag("out-1-0");
     try std.testing.expect(fx.selected_socket.?.eql(.output(1, 0)));
-    try snapshotIfImages(&t, @src(), imperativeFrame);
+    try snapshotIfImages(&t, @src(), graphFrame);
     // hovering a socket it can link to previews the edge
     try dvui.testing.moveTo("in-2-0");
-    try dvui.testing.settle(imperativeFrame);
-    try snapshotIfImages(&t, @src(), imperativeFrame);
+    try dvui.testing.settle(graphFrame);
+    try snapshotIfImages(&t, @src(), graphFrame);
 
     try clickTag("in-2-0");
     try std.testing.expect(fx.selected_socket == null);
@@ -728,15 +680,15 @@ test "click-to-link: click two sockets to link them; other clicks drop the selec
     try std.testing.expect(fx.selected_socket.?.eql(.output(2, 0)));
     const g = dvui.tagGet("graph").?.rect;
     _ = try dvui.currentWindow().addEventMouseMotion(.{ .pt = .{ .x = g.x + g.w - 20, .y = g.y + g.h - 20 } });
-    _ = try dvui.testing.step(imperativeFrame);
+    _ = try dvui.testing.step(graphFrame);
     try dvui.testing.click(.left);
-    try dvui.testing.settle(imperativeFrame);
+    try dvui.testing.settle(graphFrame);
     try std.testing.expect(fx.selected_socket == null);
     try std.testing.expectEqual(1, fx.edges.items.len);
 
     // escape cancels it too
     try clickTag("out-2-0");
     try dvui.testing.pressKey(.escape, .none);
-    try dvui.testing.settle(imperativeFrame);
+    try dvui.testing.settle(graphFrame);
     try std.testing.expect(fx.selected_socket == null);
 }

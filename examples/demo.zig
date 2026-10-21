@@ -42,7 +42,6 @@ pub const Node = struct {
 pub var nodes: std.ArrayList(Node) = .empty;
 pub var edges: std.ArrayList(ng.Edge) = .empty;
 var next_id: ng.NodeId = 1;
-var use_declarative = false;
 
 fn addNode(kind: Kind, p: dvui.Point) !ng.NodeId {
     const id = next_id;
@@ -167,14 +166,13 @@ pub fn frame() !dvui.App.Result {
         var bar = dvui.box(@src(), .{ .dir = .horizontal }, .{ .expand = .horizontal, .padding = .all(4) });
         defer bar.deinit();
         dvui.label(@src(), "{d} nodes, {d} edges", .{ nodes.items.len, edges.items.len }, .{ .gravity_y = 0.5 });
-        _ = dvui.checkbox(@src(), &use_declarative, "declarative API", .{ .gravity_x = 1.0 });
     }
 
-    if (use_declarative) try declarativeGraph() else try imperativeGraph();
+    try drawGraph();
     return .ok;
 }
 
-fn imperativeGraph() !void {
+fn drawGraph() !void {
     var graph = ng.graph(@src(), .{}, .{ .margin = .all(8), .tag = "demo-graph" });
     defer graph.deinit();
 
@@ -288,27 +286,4 @@ fn handleEvent(e: ng.GraphWidget.Event) !void {
         },
         else => {},
     }
-}
-
-const Ctx = struct {
-    fn onEvent(_: Ctx, e: ng.GraphWidget.Event) void {
-        handleEvent(e) catch {};
-    }
-};
-
-fn declarativeGraph() !void {
-    const arena = dvui.currentWindow().arena();
-    const decl_nodes = try arena.alloc(ng.declarative.Node, nodes.items.len);
-    for (nodes.items, decl_nodes) |*n, *d| d.* = .{
-        .id = n.id,
-        .title = @tagName(n.kind),
-        .inputs = (try inputsOf(n)).names,
-        .outputs = outputsOf(n.kind).names,
-        .position = n.position,
-    };
-    _ = ng.declarative.graph(@src(), Ctx{}, .{
-        .nodes = decl_nodes,
-        .edges = edges.items,
-        .on_event = Ctx.onEvent,
-    }, .{ .margin = .all(8) });
 }

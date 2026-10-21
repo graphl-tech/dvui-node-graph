@@ -1,11 +1,9 @@
 //! Node graph widgets for dvui.
 //!
-//! Imperative API: `GraphWidget` (canvas), `ManagedNode` (card), `SocketArea` (the node's socket
+//! Widgets: `GraphWidget` (canvas), `ManagedNode` (card), `SocketArea` (the node's socket
 //! columns), `ManagedInput`/`ManagedOutput` (socket rows), `ManagedSocket` (the socket itself).
 //! Higher-level widgets surface the events of the widgets they wrap through nested event unions,
 //! e.g. `ManagedInput.Event.socket` carries `ManagedSocket.Event`.
-//!
-//! Declarative API: `declarative.graph`, built entirely on the imperative one.
 
 const std = @import("std");
 const dvui = @import("dvui");
@@ -27,7 +25,6 @@ pub const SocketRow = socket_row.SocketRow;
 pub const ManagedInput = socket_row.ManagedInput;
 pub const ManagedOutput = socket_row.ManagedOutput;
 
-pub const declarative = @import("declarative.zig");
 pub const draw = @import("draw.zig");
 
 /// Begin a graph canvas. See `GraphWidget`.
