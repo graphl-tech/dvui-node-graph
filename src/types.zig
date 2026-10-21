@@ -1,5 +1,6 @@
 const std = @import("std");
 
+// FIXME: maybe this should be usize?
 /// Caller-chosen stable identifier for a node. Must be unique within a graph.
 pub const NodeId = u64;
 
