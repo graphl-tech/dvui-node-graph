@@ -22,13 +22,45 @@ const Fixture = struct {
     selected_socket: ?ng.SocketId = null,
     /// Copy of the last `nodes_moved` node list (event slices only live for one frame).
     moved_nodes: std.ArrayList(ng.NodeId) = .empty,
+    /// The app's selection, kept up to date from graph events.
+    selected: std.ArrayList(ng.NodeId) = .empty,
 
     fn deinit(self: *Fixture) void {
+        self.selected.deinit(std.testing.allocator);
         self.edges.deinit(std.testing.allocator);
         self.events.deinit(std.testing.allocator);
         self.socket_events.deinit(std.testing.allocator);
         self.moved_nodes.deinit(std.testing.allocator);
         self.* = .{};
+    }
+
+    fn isSelected(self: *const Fixture, id: ng.NodeId) bool {
+        return std.mem.indexOfScalar(ng.NodeId, self.selected.items, id) != null;
+    }
+
+    fn setSelected(self: *Fixture, id: ng.NodeId, on: bool) !void {
+        const i = std.mem.indexOfScalar(ng.NodeId, self.selected.items, id);
+        if (on and i == null) try self.selected.append(std.testing.allocator, id);
+        if (!on) if (i) |at| {
+            _ = self.selected.orderedRemove(at);
+        };
+    }
+
+    fn applySelection(self: *Fixture, e: ng.GraphWidget.Event, all: []const ng.NodeId) !void {
+        switch (e) {
+            .select => |sel| switch (sel.mode) {
+                .replace => {
+                    self.selected.clearRetainingCapacity();
+                    try self.setSelected(sel.node, true);
+                },
+                .add => try self.setSelected(sel.node, true),
+                .remove => try self.setSelected(sel.node, false),
+            },
+            .select_all => for (all) |id| try self.setSelected(id, true),
+            .deselect_all => self.selected.clearRetainingCapacity(),
+            .box_select => |b| for (b.nodes) |id| try self.setSelected(id, b.mode == .include),
+            else => {},
+        }
     }
 
     fn hasEvent(self: *const Fixture, comptime tag: std.meta.Tag(ng.GraphWidget.Event)) ?ng.GraphWidget.Event {
@@ -45,7 +77,7 @@ fn imperativeFrame() anyerror!dvui.App.Result {
     defer graph.deinit();
 
     {
-        var node = graph.node(@src(), 1, &fx.node1_pos, .{}, .{ .tag = "node-1" });
+        var node = graph.node(@src(), 1, &fx.node1_pos, .{ .selected = fx.isSelected(1) }, .{ .tag = "node-1" });
         defer node.deinit();
         dvui.label(@src(), "one", .{}, .{});
         var area = node.socketArea(@src(), .{});
@@ -56,10 +88,13 @@ fn imperativeFrame() anyerror!dvui.App.Result {
         dvui.label(@src(), "s", .{}, .{});
     }
 
-    graph.managedNodeEx(@src(), 3, &fx.node3_pos, struct { a: bool, b: f32 }, struct { c: u8 }, .{ .title = "three" }, .{ .tag = "node-3" });
+    graph.managedNodeEx(@src(), 3, &fx.node3_pos, struct { a: bool, b: f32 }, struct { c: u8 }, .{
+        .title = "three",
+        .node = .{ .selected = fx.isSelected(3) },
+    }, .{ .tag = "node-3" });
 
     {
-        var node = graph.node(@src(), 2, &fx.node2_pos, .{}, .{ .tag = "node-2" });
+        var node = graph.node(@src(), 2, &fx.node2_pos, .{ .selected = fx.isSelected(2) }, .{ .tag = "node-2" });
         defer node.deinit();
         dvui.label(@src(), "two", .{}, .{});
         var area = node.socketArea(@src(), .{});
@@ -86,6 +121,7 @@ fn imperativeFrame() anyerror!dvui.App.Result {
     defer fx.selected_socket = graph.selectedSocket();
     for (graph.events()) |e| {
         try fx.events.append(alloc, e);
+        try fx.applySelection(e, &.{ 1, 2, 3 });
         switch (e) {
             .link_created => |edge| try fx.edges.append(alloc, edge),
             .nodes_moved => |m| {
@@ -166,7 +202,61 @@ test "dragging a node moves it and reports nodes_moved" {
     const moved = fx.hasEvent(.nodes_moved) orelse return error.NoNodesMoved;
     try std.testing.expectEqualSlices(ng.NodeId, &.{2}, fx.moved_nodes.items);
     try std.testing.expectApproxEqAbs(40 / s, moved.nodes_moved.delta.x, 0.01);
-    try std.testing.expect(fx.hasEvent(.selection_changed) != null);
+    try std.testing.expect(fx.hasEvent(.select) != null);
+    try std.testing.expectEqualSlices(ng.NodeId, &.{2}, fx.selected.items);
+}
+
+test "box select previews while dragging and reports the boxed nodes on release" {
+    var t = try initTest();
+    defer t.deinit();
+    defer fx.deinit();
+
+    try dvui.testing.settle(imperativeFrame);
+    const cw = dvui.currentWindow();
+    const graph_rect = dvui.tagGet("graph").?.rect;
+    const n3 = dvui.tagGet("node-3").?.rect;
+
+    // ctrl-drag from above-left of node 1 to inside node 3 (the left column)
+    cw.mouse_pt = .{ .x = graph_rect.x + 4, .y = graph_rect.y + 4 };
+    cw.modifiers = .lcontrol;
+    _ = try cw.addEventMouseButton(.left, .press);
+    _ = try dvui.testing.step(imperativeFrame);
+    _ = try cw.addEventMouseMotion(.{ .pt = .{ .x = n3.x + n3.w / 2, .y = n3.y + n3.h / 2 } });
+    try dvui.testing.settle(imperativeFrame);
+    // nodes 1 and 3 draw selected, but nothing is selected until release
+    try snapshotIfImages(&t, @src(), imperativeFrame);
+    try std.testing.expect(fx.selected.items.len == 0);
+
+    _ = try cw.addEventMouseButton(.left, .release);
+    cw.modifiers = .none;
+    try dvui.testing.settle(imperativeFrame);
+    const boxed = fx.hasEvent(.box_select) orelse return error.NoBoxSelect;
+    try std.testing.expectEqual(ng.GraphWidget.BoxSelectMode.include, boxed.box_select.mode);
+    std.mem.sort(ng.NodeId, fx.selected.items, {}, std.sort.asc(ng.NodeId));
+    try std.testing.expectEqualSlices(ng.NodeId, &.{ 1, 3 }, fx.selected.items);
+}
+
+test "ctrl+a selects all and escape deselects" {
+    var t = try initTest();
+    defer t.deinit();
+    defer fx.deinit();
+
+    try dvui.testing.settle(imperativeFrame);
+    // focus the canvas
+    const graph_rect = dvui.tagGet("graph").?.rect;
+    dvui.currentWindow().mouse_pt = .{ .x = graph_rect.x + graph_rect.w - 10, .y = graph_rect.y + graph_rect.h - 10 };
+    try dvui.testing.click(.left);
+    try dvui.testing.settle(imperativeFrame);
+    try std.testing.expect(fx.hasEvent(.deselect_all) == null);
+
+    try dvui.testing.pressKey(.a, .lcontrol);
+    try dvui.testing.settle(imperativeFrame);
+    try std.testing.expectEqual(3, fx.selected.items.len);
+
+    try dvui.testing.pressKey(.escape, .none);
+    try dvui.testing.settle(imperativeFrame);
+    try std.testing.expect(fx.hasEvent(.deselect_all) != null);
+    try std.testing.expectEqual(0, fx.selected.items.len);
 }
 
 /// Press on `from_tag`, drag a wire onto `to_tag` and release.
@@ -390,6 +480,8 @@ fn readmeFrame() anyerror!dvui.App.Result {
         .link_dropped => {}, // wire released on empty canvas, `.point` is graph space
         .link_clicked => {},
         .nodes_moved => {}, // `.nodes` moved by `.delta`
+        // the selection is yours: update it here and pass each node `.selected`
+        .select, .select_all, .deselect_all, .box_select => {},
         .delete_selection => {},
         .context_menu => {}, // right click on canvas/node/socket
         else => {},
@@ -430,30 +522,11 @@ test "a graph reserves last frame's sockets and nodes up front" {
 /// A graph whose node 2 has a free-floating "+" socket for input 5, which it doesn't have yet.
 const PlusFixture = struct {
     var events: std.ArrayList(ng.GraphWidget.Event) = .empty;
-    var selected: std.ArrayList(ng.NodeId) = .empty;
-
-    fn isSelected(_: *anyopaque, id: ng.NodeId) bool {
-        return std.mem.indexOfScalar(ng.NodeId, selected.items, id) != null;
-    }
-    fn setSelected(_: *anyopaque, id: ng.NodeId, on: bool) void {
-        const i = std.mem.indexOfScalar(ng.NodeId, selected.items, id);
-        if (on and i == null) selected.append(std.testing.allocator, id) catch {};
-        if (!on) if (i) |at| {
-            _ = selected.orderedRemove(at);
-        };
-    }
-    fn clear(_: *anyopaque) void {
-        selected.clearRetainingCapacity();
-    }
-    fn list(_: *anyopaque, alloc: std.mem.Allocator) []const ng.NodeId {
-        return alloc.dupe(ng.NodeId, selected.items) catch &.{};
-    }
-    const vtable: ng.GraphWidget.Selection.VTable = .{ .isSelected = isSelected, .setSelected = setSelected, .clear = clear, .list = list };
-    var dummy: u8 = 0;
+    /// The app ignores selection events, so nothing is ever selected.
     var positions = [_]dvui.Point{ .{ .x = 20, .y = 40 }, .{ .x = 260, .y = 140 } };
 
     fn frame() anyerror!dvui.App.Result {
-        var graph = ng.graph(@src(), .{ .selection = .{ .ctx = &dummy, .vtable = &vtable } }, .{});
+        var graph = ng.graph(@src(), .{}, .{});
         defer graph.deinit();
 
         {
@@ -499,11 +572,10 @@ fn dragBetween(from: []const u8, to: []const u8, frame: dvui.App.frameFunction) 
     try dvui.testing.settle(frame);
 }
 
-test "a socket the model doesn't have yet works both ways; selection can be caller-owned" {
+test "a socket the model doesn't have yet works both ways" {
     var t = try dvui.testing.init(.{ .window_size = .{ .w = 600, .h = 400 } });
     defer t.deinit();
     defer PlusFixture.events.deinit(std.testing.allocator);
-    defer PlusFixture.selected.deinit(std.testing.allocator);
 
     try dvui.testing.settle(PlusFixture.frame);
     try dvui.testing.expectVisible("plus");
@@ -519,11 +591,31 @@ test "a socket the model doesn't have yet works both ways; selection can be call
         try std.testing.expect(created.?.eql(want));
     }
 
-    // clicking a node selects it through the caller's selection
+    // clicking a node reports it; the app decides whether it becomes selected
+    PlusFixture.events.clearRetainingCapacity();
     try dvui.testing.moveTo("pn-1");
     try dvui.testing.click(.left);
     try dvui.testing.settle(PlusFixture.frame);
-    try std.testing.expectEqualSlices(ng.NodeId, &.{1}, PlusFixture.selected.items);
+    var clicked: ?ng.NodeId = null;
+    for (PlusFixture.events.items) |e| if (e == .select) {
+        clicked = e.select.node;
+    };
+    try std.testing.expectEqual(1, clicked.?);
+
+    // a node the app never selects still follows a drag that starts on it
+    const before = PlusFixture.positions[1];
+    try dvui.testing.moveTo("pn-2");
+    const cw = dvui.currentWindow();
+    _ = try cw.addEventMouseButton(.left, .press);
+    _ = try dvui.testing.step(PlusFixture.frame);
+    const start = cw.mouse_pt;
+    for (1..3) |i| {
+        _ = try cw.addEventMouseMotion(.{ .pt = start.plus(.{ .x = @floatFromInt(i * 10), .y = 0 }) });
+        _ = try dvui.testing.step(PlusFixture.frame);
+    }
+    _ = try cw.addEventMouseButton(.left, .release);
+    try dvui.testing.settle(PlusFixture.frame);
+    try std.testing.expect(PlusFixture.positions[1].x > before.x);
 }
 
 fn styledFrame() anyerror!dvui.App.Result {

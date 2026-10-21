@@ -1,9 +1,10 @@
 //! Pannable, zoomable node-graph canvas.
 //! See README.md for usage
 //!
-//! Each node's position is passed in by pointer. The view transform and the selection persist in
-//! dvui's data store keyed by this widget's id unless the caller owns them
-//! (`InitOptions.view`, `InitOptions.selection`).
+//! Each node's position is passed in by pointer, and whether it is selected by
+//! `ManagedNode.InitOptions.selected`; selection changes arrive as events. The view transform
+//! persists in dvui's data store keyed by this widget's id unless the caller owns it
+//! (`InitOptions.view`).
 
 const std = @import("std");
 const builtin = @import("builtin");
@@ -34,31 +35,16 @@ pub const View = struct {
     scale: f32 = 1,
 };
 
-/// Caller-owned selection storage, for apps that already track selected nodes.
-pub const Selection = struct {
-    ctx: *anyopaque,
-    vtable: *const VTable,
-
-    pub const VTable = struct {
-        isSelected: *const fn (ctx: *anyopaque, node: NodeId) bool,
-        setSelected: *const fn (ctx: *anyopaque, node: NodeId, selected: bool) void,
-        clear: *const fn (ctx: *anyopaque) void,
-        /// All selected nodes, allocated from `alloc`.
-        list: *const fn (ctx: *anyopaque, alloc: std.mem.Allocator) []const NodeId,
-    };
-};
-
 pub const InitOptions = struct {
     /// Caller-owned view transform. When null the view lives in dvui's data store.
     view: ?*View = null,
-    /// Caller-owned selection. When null the selection lives in dvui's data store.
-    selection: ?Selection = null,
     /// False draws the graph without responding to input (e.g. a drag preview).
     interactive: bool = true,
     style: Style = .default,
     pan: bool = true,
     zoom: bool = true,
-    /// Ctrl/cmd-drag on empty canvas adds to the selection, shift-drag removes from it.
+    /// Ctrl/cmd-drag on empty canvas selects the nodes it touches, shift-drag deselects them
+    /// (see `Event.box_select`).
     box_select: bool = true,
     /// Let the user drag wires between two inputs or two outputs.
     allow_same_side_links: bool = false,
@@ -87,9 +73,16 @@ pub const Event = union(enum) {
     link_clicked: Edge,
     /// A socket was pressed and released without dragging a wire.
     socket_clicked: SocketId,
-    /// The selected nodes were dragged by `delta` (graph space).
+    /// The selected nodes (and the node the drag started on) were dragged by `delta` (graph space).
     nodes_moved: struct { nodes: []const NodeId, delta: dvui.Point },
-    selection_changed,
+    /// A node was clicked; update the selection according to `mode` (from the modifier keys).
+    select: struct { node: NodeId, mode: SelectMode },
+    /// Ctrl/cmd+A.
+    select_all,
+    /// A click on empty canvas, or Escape, while a node is selected.
+    deselect_all,
+    /// A box select ended: select (`include`) or deselect (`exclude`) `nodes`.
+    box_select: struct { nodes: []const NodeId, mode: BoxSelectMode },
     /// Delete or backspace while the canvas has focus.
     delete_selection,
     /// Right click. `point` is in graph space, `point_natural` is for placing a floating menu.
@@ -107,6 +100,8 @@ const NodeRecord = struct {
     id: NodeId,
     /// Border rect in graph space.
     rect: dvui.Rect,
+    /// Declared with `selected`.
+    selected: bool,
 };
 
 const QueuedSocketEvent = struct {
@@ -127,6 +122,8 @@ const Wire = struct {
 
 const NodeDrag = struct {
     capture_id: dvui.Id,
+    /// The node the drag started on. It moves with the selection even if it isn't selected.
+    node: NodeId,
     total: dvui.Point = .{},
 };
 
@@ -168,9 +165,8 @@ sockets: std.ArrayList(SocketRecord) = .empty,
 socket_index: std.AutoHashMapUnmanaged(SocketId, usize) = .empty,
 nodes: std.ArrayList(NodeRecord) = .empty,
 connected: std.ArrayList(SocketId) = .empty,
-/// Internal selection storage, used when `init_opts.selection` is null.
-selection: std.ArrayList(NodeId) = .empty,
-selection_dirty: bool = false,
+/// A node drag that ended this frame; reported as `nodes_moved` once every node is declared.
+ended_drag: ?NodeDrag = null,
 events_list: std.ArrayList(Event) = .empty,
 /// Socket events for this frame, picked up by the matching `ManagedSocket`.
 socket_events: std.ArrayList(QueuedSocketEvent) = .empty,
@@ -243,10 +239,6 @@ pub fn initInPlace(self: *GraphWidget, src: std.builtin.SourceLocation, init_opt
     self.socket_index.ensureTotalCapacity(arena(), @intCast(self.prev_sockets.len)) catch {};
     self.nodes.ensureTotalCapacity(arena(), self.prev_nodes.len) catch {};
     self.connected.ensureTotalCapacity(arena(), self.prev_connected.len) catch {};
-    if (init_opts.selection == null) {
-        const prev_selection = dvui.dataGetSlice(null, wd_id, "_selection", []NodeId) orelse &.{};
-        self.selection.appendSlice(arena(), prev_selection) catch {};
-    }
     if (dvui.dataGetSlice(null, wd_id, "_late_socket_events", []QueuedSocketEvent)) |late| {
         self.socket_events.appendSlice(arena(), late) catch {};
         dvui.dataRemove(null, wd_id, "_late_socket_events");
@@ -640,8 +632,10 @@ pub fn nodeRect(self: *GraphWidget, n: NodeId) ?dvui.Rect {
     return null;
 }
 
+/// Queue `e` for `events()`. Redraws next frame so the app's response shows.
 pub fn pushEvent(self: *GraphWidget, e: Event) void {
     self.events_list.append(arena(), e) catch {};
+    dvui.refresh(null, @src(), self.id());
 }
 
 /// Events produced so far this frame. Processes canvas-level input (panning, zoom, selection,
@@ -663,8 +657,8 @@ pub fn assertCanDeclare(self: *const GraphWidget) void {
 // Interfaces used by ManagedNode / ManagedSocket
 // ---------------------------------------------------------------------------------------------
 
-pub fn registerNode(self: *GraphWidget, node_id: NodeId, border_rect: dvui.Rect.Physical) void {
-    self.nodes.append(arena(), .{ .id = node_id, .rect = self.data_rs.rectFromPhysical(border_rect) }) catch {};
+pub fn registerNode(self: *GraphWidget, node_id: NodeId, border_rect: dvui.Rect.Physical, selected: bool) void {
+    self.nodes.append(arena(), .{ .id = node_id, .rect = self.data_rs.rectFromPhysical(border_rect), .selected = selected }) catch {};
 }
 
 pub fn registerSocket(self: *GraphWidget, s: SocketId, center: Physical, radius: f32) void {
@@ -764,16 +758,22 @@ pub fn setWireTarget(self: *GraphWidget, s: SocketId) void {
     self.wire_target = s;
 }
 
-pub fn beginNodeDrag(self: *GraphWidget, capture_id: dvui.Id) void {
-    self.state.node_drag = .{ .capture_id = capture_id };
+pub fn beginNodeDrag(self: *GraphWidget, capture_id: dvui.Id, node_id: NodeId) void {
+    self.state.node_drag = .{ .capture_id = capture_id, .node = node_id };
 }
 
-/// Ends the drag; emits `nodes_moved` if the nodes actually moved.
+/// The node a drag started on, while a node drag is in progress.
+pub fn draggedNode(self: *const GraphWidget) ?NodeId {
+    const nd = self.state.node_drag orelse return null;
+    return nd.node;
+}
+
+/// Ends the drag. Returns whether the nodes moved; if so `nodes_moved` follows.
 pub fn endNodeDrag(self: *GraphWidget) bool {
     const nd = self.state.node_drag orelse return false;
     self.state.node_drag = null;
     if (nd.total.x == 0 and nd.total.y == 0) return false;
-    self.pushEvent(.{ .nodes_moved = .{ .nodes = self.selectedNodes(), .delta = nd.total } });
+    self.ended_drag = nd;
     return true;
 }
 
@@ -781,66 +781,48 @@ pub fn endNodeDrag(self: *GraphWidget) bool {
 // Selection
 // ---------------------------------------------------------------------------------------------
 
-pub const SelectMode = enum { replace, add, toggle, remove };
+pub const SelectMode = enum { replace, add, remove };
 
-pub fn isSelected(self: *const GraphWidget, node_id: NodeId) bool {
-    if (self.init_opts.selection) |s| return s.vtable.isSelected(s.ctx, node_id);
-    return std.mem.indexOfScalar(NodeId, self.selection.items, node_id) != null;
+/// While a box select is in progress, whether it covers `node_id` and what it will do to it.
+pub fn inBoxSelect(self: *const GraphWidget, node_id: NodeId) ?BoxSelectMode {
+    const bs = self.state.box_select orelse return null;
+    const r = for (self.prev_nodes) |n| {
+        if (n.id == node_id) break n.rect;
+    } else return null;
+    if (self.data_rs.rectToPhysical(r).intersect(rectFromPoints(bs.start, bs.current)).empty()) return null;
+    return bs.mode;
 }
 
-/// Selected nodes (arena memory, valid this frame).
-pub fn selectedNodes(self: *const GraphWidget) []const NodeId {
-    if (self.init_opts.selection) |s| return s.vtable.list(s.ctx, arena());
-    return arena().dupe(NodeId, self.selection.items) catch &.{};
+fn anySelected(self: *const GraphWidget) bool {
+    for (self.nodes.items) |n| if (n.selected) return true;
+    return false;
 }
 
-fn setSelected(self: *GraphWidget, node_id: NodeId, selected: bool) void {
-    if (self.init_opts.selection) |s| return s.vtable.setSelected(s.ctx, node_id, selected);
-    const idx = std.mem.indexOfScalar(NodeId, self.selection.items, node_id);
-    if (selected and idx == null) {
-        self.selection.append(arena(), node_id) catch {};
-    } else if (!selected) {
-        if (idx) |i| _ = self.selection.orderedRemove(i);
+fn isSelected(self: *const GraphWidget, node_id: NodeId) bool {
+    for (self.nodes.items) |n| if (n.id == node_id) return n.selected;
+    return false;
+}
+
+fn pushNodesMoved(self: *GraphWidget) void {
+    const nd = self.ended_drag orelse return;
+    self.ended_drag = null;
+    var moved: std.ArrayList(NodeId) = .empty;
+    for (self.nodes.items) |n| {
+        if (n.selected or n.id == nd.node) moved.append(arena(), n.id) catch {};
     }
+    self.pushEvent(.{ .nodes_moved = .{ .nodes = moved.items, .delta = nd.total } });
 }
 
-pub fn select(self: *GraphWidget, node_id: NodeId, mode: SelectMode) void {
-    const was = self.isSelected(node_id);
-    switch (mode) {
-        .replace => {
-            const all = self.selectedNodes();
-            if (all.len == 1 and was) return;
-            self.clearSelectionRaw();
-            self.setSelected(node_id, true);
-        },
-        .add => {
-            if (was) return;
-            self.setSelected(node_id, true);
-        },
-        .remove => {
-            if (!was) return;
-            self.setSelected(node_id, false);
-        },
-        .toggle => self.setSelected(node_id, !was),
+fn endBoxSelect(self: *GraphWidget) void {
+    const bs = self.state.box_select orelse return;
+    self.state.box_select = null;
+    const sel = rectFromPoints(bs.start, bs.current);
+    var boxed: std.ArrayList(NodeId) = .empty;
+    for (self.nodes.items) |n| {
+        if (self.data_rs.rectToPhysical(n.rect).intersect(sel).empty()) continue;
+        boxed.append(arena(), n.id) catch {};
     }
-    self.markSelectionChanged();
-}
-
-fn clearSelectionRaw(self: *GraphWidget) void {
-    if (self.init_opts.selection) |s| return s.vtable.clear(s.ctx);
-    self.selection.clearRetainingCapacity();
-}
-
-pub fn clearSelection(self: *GraphWidget) void {
-    if (self.selectedNodes().len == 0) return;
-    self.clearSelectionRaw();
-    self.markSelectionChanged();
-}
-
-fn markSelectionChanged(self: *GraphWidget) void {
-    if (!self.selection_dirty) self.pushEvent(.selection_changed);
-    self.selection_dirty = true;
-    dvui.refresh(null, @src(), self.id());
+    if (boxed.items.len > 0) self.pushEvent(.{ .box_select = .{ .nodes = boxed.items, .mode = bs.mode } });
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -856,6 +838,7 @@ fn processCanvasEvents(self: *GraphWidget) void {
 
     self.processWire();
     self.dropSocketSelectionOnOtherPress();
+    self.pushNodesMoved();
 
     for (dvui.events()) |*e| {
         switch (e.evt) {
@@ -869,7 +852,7 @@ fn processCanvasEvents(self: *GraphWidget) void {
                     const target: ContextTarget = if (self.socketAt(me.p)) |s|
                         .{ .socket = s }
                     else if (self.nodeAt(me.p)) |n| blk: {
-                        if (!self.isSelected(n)) self.select(n, .replace);
+                        if (!self.isSelected(n)) self.pushEvent(.{ .select = .{ .node = n, .mode = .replace } });
                         break :blk .{ .node = n };
                     } else .canvas;
                     self.pushEvent(.{ .context_menu = .{
@@ -893,12 +876,12 @@ fn processCanvasEvents(self: *GraphWidget) void {
                     // first cancel a pending click-to-link, then the node selection
                     if (self.state.selected_socket != null) {
                         self.selectSocket(null);
-                    } else {
-                        self.clearSelection();
+                    } else if (self.anySelected()) {
+                        self.pushEvent(.deselect_all);
                     }
                 } else if (ke.code == .a and ke.mod.matchBind("ctrl/cmd")) {
                     e.handle(@src(), self.box.data());
-                    for (self.nodes.items) |n| self.select(n.id, .add);
+                    self.pushEvent(.select_all);
                 }
             },
             else => {},
@@ -919,18 +902,15 @@ fn processCanvasMouse(self: *GraphWidget, e: *dvui.Event, me: dvui.Event.Mouse) 
             dvui.dragPreStart(me.button, me.p, .{ .name = pan_drag_name });
             const mode: ?BoxSelectMode = if (me.mod.matchBind("ctrl/cmd")) .include else if (me.mod.shift()) .exclude else null;
             if (self.init_opts.box_select) {
-                if (mode) |m| {
-                    self.state.box_select = .{ .start = me.p, .current = me.p, .mode = m };
-                    dvui.dataSetSlice(null, wd.id, "_box_base", self.selectedNodes());
-                }
+                if (mode) |m| self.state.box_select = .{ .start = me.p, .current = me.p, .mode = m };
             }
         },
         .release => if (me.button.pointer() and dvui.captured(wd.id)) {
             e.handle(@src(), wd);
             if (self.state.box_select != null) {
-                self.state.box_select = null;
-            } else if (dvui.dragging(me.p, pan_drag_name) == null) {
-                self.clearSelection();
+                self.endBoxSelect();
+            } else if (dvui.dragging(me.p, pan_drag_name) == null and self.anySelected()) {
+                self.pushEvent(.deselect_all);
             }
             dvui.captureMouse(null, e.num);
             dvui.dragEnd();
@@ -940,7 +920,6 @@ fn processCanvasMouse(self: *GraphWidget, e: *dvui.Event, me: dvui.Event.Mouse) 
             e.handle(@src(), wd);
             if (self.state.box_select) |*bs| {
                 bs.current = me.p;
-                self.applyBoxSelect(bs.*);
                 dvui.refresh(null, @src(), wd.id);
             } else if (self.init_opts.pan) {
                 if (dvui.dragging(me.p, pan_drag_name)) |dps| {
@@ -974,19 +953,6 @@ pub fn zoomAround(self: *GraphWidget, p: Physical, factor: f32) void {
         .y = anchor.y - (p.y - self.canvas_rect.y) / s,
     };
     dvui.refresh(null, @src(), self.id());
-}
-
-fn applyBoxSelect(self: *GraphWidget, bs: BoxSelect) void {
-    const sel = rectFromPoints(bs.start, bs.current);
-    const base = dvui.dataGetSlice(null, self.id(), "_box_base", []NodeId) orelse &.{};
-    self.clearSelectionRaw();
-    for (base) |n| self.setSelected(n, true);
-    for (self.prev_nodes) |n| {
-        const r = self.data_rs.rectToPhysical(n.rect);
-        if (r.intersect(sel).empty()) continue;
-        self.setSelected(n.id, bs.mode == .include);
-    }
-    self.markSelectionChanged();
 }
 
 fn rectFromPoints(a: Physical, b: Physical) dvui.Rect.Physical {
@@ -1073,7 +1039,6 @@ pub fn deinit(self: *GraphWidget) void {
     dvui.dataSetSlice(null, wd_id, "_sockets", self.sockets.items);
     dvui.dataSetSlice(null, wd_id, "_nodes", self.nodes.items);
     dvui.dataSetSlice(null, wd_id, "_connected", self.connected.items);
-    if (self.init_opts.selection == null) dvui.dataSetSlice(null, wd_id, "_selection", self.selection.items);
     if (self.late_socket_events.items.len > 0) {
         dvui.dataSetSlice(null, wd_id, "_late_socket_events", self.late_socket_events.items);
         dvui.refresh(null, @src(), wd_id);

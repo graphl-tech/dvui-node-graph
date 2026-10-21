@@ -88,13 +88,48 @@ fn positionPtr(g: *GraphWidget, desc: Node) *dvui.Point {
     return dvui.dataGetPtrDefault(null, key, "_pos", dvui.Point, desc.position);
 }
 
+/// Apply a selection event to `sel`, the selected node ids.
+fn applySelection(sel: *std.ArrayList(NodeId), e: GraphWidget.Event, nodes: []const Node) void {
+    const a = dvui.currentWindow().arena();
+    switch (e) {
+        .select => |s| switch (s.mode) {
+            .replace => {
+                sel.clearRetainingCapacity();
+                sel.append(a, s.node) catch {};
+            },
+            .add => setSelected(sel, s.node, true),
+            .remove => setSelected(sel, s.node, false),
+        },
+        .select_all => {
+            sel.clearRetainingCapacity();
+            for (nodes) |n| sel.append(a, n.id) catch {};
+        },
+        .deselect_all => sel.clearRetainingCapacity(),
+        .box_select => |b| for (b.nodes) |n| setSelected(sel, n, b.mode == .include),
+        else => {},
+    }
+}
+
+fn setSelected(sel: *std.ArrayList(NodeId), id: NodeId, selected: bool) void {
+    const i = std.mem.indexOfScalar(NodeId, sel.items, id);
+    if (selected and i == null) sel.append(dvui.currentWindow().arena(), id) catch {};
+    if (!selected) if (i) |at| {
+        _ = sel.orderedRemove(at);
+    };
+}
+
 /// Render a whole graph from `spec`. Returns this frame's graph events (arena memory).
 pub fn graph(src: std.builtin.SourceLocation, ctx: anytype, spec: Spec(@TypeOf(ctx)), opts: dvui.Options) []const GraphWidget.Event {
     var g = GraphWidget.init(src, spec.graph, opts);
     defer g.deinit();
 
+    // selection is kept in dvui's data store, like dragged positions
+    var sel: std.ArrayList(NodeId) = .empty;
+    sel.appendSlice(dvui.currentWindow().arena(), dvui.dataGetSlice(null, g.id(), "_selection", []NodeId) orelse &.{}) catch {};
+
     for (spec.nodes) |desc| {
-        var n = ManagedNode.init(@src(), g, desc.id, positionPtr(g, desc), .{}, .{});
+        const selected = std.mem.indexOfScalar(NodeId, sel.items, desc.id) != null;
+        var n = ManagedNode.init(@src(), g, desc.id, positionPtr(g, desc), .{ .selected = selected }, .{});
         defer n.deinit();
 
         if (spec.draw_node_title) |f| f(ctx, n, desc) else if (desc.title) |t| {
@@ -131,6 +166,8 @@ pub fn graph(src: std.builtin.SourceLocation, ctx: anytype, spec: Spec(@TypeOf(c
     }
 
     const evs = g.events();
+    for (evs) |e| applySelection(&sel, e, spec.nodes);
+    dvui.dataSetSlice(null, g.id(), "_selection", sel.items);
     if (spec.on_event) |f| for (evs) |e| f(ctx, e);
     return evs;
 }

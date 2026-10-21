@@ -16,12 +16,16 @@ const NodeId = types.NodeId;
 const ManagedNode = @This();
 
 pub const InitOptions = struct {
+    /// The app's selection state for this node. Changes arrive as `GraphWidget.Event`s
+    /// (`select`, `select_all`, `deselect_all`, `box_select`).
+    selected: bool = false,
     draggable: bool = true,
     selectable: bool = true,
     /// Overrides the graph's `style.node` for this node.
     style: ?Style.Node = null,
-    /// Apply this frame's drag delta to the position. Turn off to apply moves yourself from
-    /// `GraphWidget.node_drag_delta` (e.g. to route them through an undo system).
+    /// Apply this frame's drag delta to the position if this node is selected or the drag started
+    /// on it. Turn off to apply moves yourself from `GraphWidget.node_drag_delta` (e.g. to route
+    /// them through an undo system).
     apply_drag: bool = true,
 };
 
@@ -29,6 +33,7 @@ graph: *GraphWidget,
 id: NodeId,
 init_opts: InitOptions,
 position: *dvui.Point,
+/// `init_opts.selected`, or what an in-progress box select will make it.
 selected: bool,
 /// Mouse was over this (topmost) node last frame.
 hovered: bool,
@@ -69,11 +74,12 @@ pub fn initInPlace(
         .id = id,
         .init_opts = init_opts,
         .position = position,
-        .selected = graph.isSelected(id),
+        .selected = if (graph.inBoxSelect(id)) |m| m == .include else init_opts.selected,
         .hovered = if (graph.hover_node) |h| h == id else false,
     };
 
-    if (self.selected and init_opts.draggable and init_opts.apply_drag) {
+    const drag_origin = if (graph.draggedNode()) |d| d == id else false;
+    if ((init_opts.selected or drag_origin) and init_opts.draggable and init_opts.apply_drag) {
         self.position.* = self.position.plus(graph.node_drag_delta);
     }
 
@@ -163,18 +169,17 @@ fn processEvents(self: *ManagedNode) void {
                 if (!me.button.pointer()) continue;
                 e.handle(@src(), wd);
                 if (self.init_opts.selectable) {
-                    if (me.mod.shift()) {
-                        graph.select(self.id, .remove);
-                    } else if (me.mod.matchBind("ctrl/cmd")) {
-                        graph.select(self.id, .add);
-                    } else if (!self.selected) {
-                        graph.select(self.id, .replace);
-                    }
+                    const mode: ?GraphWidget.SelectMode = if (me.mod.shift())
+                        .remove
+                    else if (me.mod.matchBind("ctrl/cmd"))
+                        .add
+                    else if (!self.selected) .replace else null;
+                    if (mode) |m| graph.pushEvent(.{ .select = .{ .node = self.id, .mode = m } });
                 }
                 if (self.init_opts.draggable) {
                     dvui.captureMouse(wd, e.num);
                     dvui.dragPreStart(me.button, me.p, .{ .name = GraphWidget.node_drag_name });
-                    graph.beginNodeDrag(wd.id);
+                    graph.beginNodeDrag(wd.id, self.id);
                 }
             },
             .release => if (me.button.pointer() and dvui.captured(wd.id)) {
@@ -183,8 +188,8 @@ fn processEvents(self: *ManagedNode) void {
                 dvui.dragEnd();
                 const moved = graph.endNodeDrag();
                 // A plain click on one node of a multi-selection narrows to that node.
-                if (!moved and self.init_opts.selectable and !me.mod.shift() and !me.mod.matchBind("ctrl/cmd")) {
-                    graph.select(self.id, .replace);
+                if (!moved and self.init_opts.selectable and self.selected and !me.mod.shift() and !me.mod.matchBind("ctrl/cmd")) {
+                    graph.pushEvent(.{ .select = .{ .node = self.id, .mode = .replace } });
                 }
             },
             .wheel_x, .wheel_y => {},
@@ -199,7 +204,7 @@ pub fn deinit(self: *ManagedNode) void {
 
     self.processEvents();
     if (dvui.captured(self.card.data().id)) dvui.cursorSet(.hand);
-    self.graph.registerNode(self.id, self.card.data().borderRectScale().r);
+    self.graph.registerNode(self.id, self.card.data().borderRectScale().r, self.init_opts.selected);
     self.card.deinit();
     self.front_to_back.deinit();
 }

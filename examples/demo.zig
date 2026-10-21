@@ -36,6 +36,7 @@ pub const Node = struct {
     id: ng.NodeId,
     kind: Kind,
     position: dvui.Point,
+    selected: bool = false,
 };
 
 pub var nodes: std.ArrayList(Node) = .empty;
@@ -178,7 +179,7 @@ fn imperativeGraph() !void {
     defer graph.deinit();
 
     for (nodes.items) |*n| {
-        var node = graph.node(@src(), n.id, &n.position, .{}, .{});
+        var node = graph.node(@src(), n.id, &n.position, .{ .selected = n.selected }, .{});
         defer node.deinit();
 
         {
@@ -234,7 +235,7 @@ fn imperativeGraph() !void {
 
     for (edges.items) |e| _ = graph.link(e.source.node, e.source.socket, e.target.node, e.target.socket);
 
-    for (graph.events()) |e| try handleEvent(graph, e);
+    for (graph.events()) |e| try handleEvent(e);
 }
 
 fn removeEdgesAt(s: ng.SocketId) void {
@@ -245,7 +246,7 @@ fn removeEdgesAt(s: ng.SocketId) void {
     }
 }
 
-fn handleEvent(graph: ?*ng.GraphWidget, e: ng.GraphWidget.Event) !void {
+fn handleEvent(e: ng.GraphWidget.Event) !void {
     switch (e) {
         .link_created => |edge| try addEdge(edge),
         .socket_clicked => |s| ensureInput(s),
@@ -257,9 +258,30 @@ fn handleEvent(graph: ?*ng.GraphWidget, e: ng.GraphWidget.Event) !void {
             const id = try addNode(.{ .add = .{} }, drop.point);
             try addEdge(ng.Edge.normalized(drop.source, if (drop.source.side() == .output) .input(id, 0) else .output(id, 0)));
         },
-        .delete_selection => if (graph) |g| {
-            for (g.selectedNodes()) |id| removeNode(id);
-            g.clearSelection();
+        .select => |sel| for (nodes.items) |*n| switch (sel.mode) {
+            .replace => n.selected = n.id == sel.node,
+            .add => if (n.id == sel.node) {
+                n.selected = true;
+            },
+            .remove => if (n.id == sel.node) {
+                n.selected = false;
+            },
+        },
+        .select_all => for (nodes.items) |*n| {
+            n.selected = true;
+        },
+        .deselect_all => for (nodes.items) |*n| {
+            n.selected = false;
+        },
+        .box_select => |b| for (nodes.items) |*n| {
+            if (std.mem.indexOfScalar(ng.NodeId, b.nodes, n.id) != null) n.selected = b.mode == .include;
+        },
+        .delete_selection => {
+            var i = nodes.items.len;
+            while (i > 0) {
+                i -= 1;
+                if (nodes.items[i].selected) removeNode(nodes.items[i].id);
+            }
         },
         .context_menu => |cm| if (cm.target == .canvas) {
             _ = try addNode(.{ .number = .{} }, cm.point);
@@ -270,7 +292,7 @@ fn handleEvent(graph: ?*ng.GraphWidget, e: ng.GraphWidget.Event) !void {
 
 const Ctx = struct {
     fn onEvent(_: Ctx, e: ng.GraphWidget.Event) void {
-        handleEvent(null, e) catch {};
+        handleEvent(e) catch {};
     }
 };
 
