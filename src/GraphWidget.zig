@@ -2,7 +2,7 @@
 //!
 //! Usage per frame:
 //!   1. `GraphWidget.init` (or `dvui_node_graph.graph`)
-//!   2. declare nodes (`node`/`baseNode`) - each node lays out its sockets
+//!   2. declare nodes (`node`/`managedNode`) - each node lays out its sockets
 //!   3. declare edges with `link` (after nodes, so socket positions are known)
 //!   4. optionally read `events()`
 //!   5. `deinit`
@@ -454,11 +454,11 @@ pub fn node(self: *GraphWidget, src: std.builtin.SourceLocation, node_id: NodeId
 }
 
 /// Render a complete node with a named row for each of `inputs` and `outputs`.
-pub fn baseNode(self: *GraphWidget, src: std.builtin.SourceLocation, node_id: NodeId, position: *dvui.Point, inputs: Sockets, outputs: Sockets) void {
-    self.baseNodeEx(src, node_id, position, inputs, outputs, .{}, .{});
+pub fn managedNode(self: *GraphWidget, src: std.builtin.SourceLocation, node_id: NodeId, position: *dvui.Point, inputs: Sockets, outputs: Sockets) void {
+    self.managedNodeEx(src, node_id, position, inputs, outputs, .{}, .{});
 }
 
-pub fn baseNodeEx(self: *GraphWidget, src: std.builtin.SourceLocation, node_id: NodeId, position: *dvui.Point, inputs: Sockets, outputs: Sockets, init_opts: BaseNode.InitOptions, opts: dvui.Options) void {
+pub fn managedNodeEx(self: *GraphWidget, src: std.builtin.SourceLocation, node_id: NodeId, position: *dvui.Point, inputs: Sockets, outputs: Sockets, init_opts: BaseNode.InitOptions, opts: dvui.Options) void {
     var n = BaseNode.init(src, self, node_id, position, init_opts, opts);
     defer n.deinit();
     n.defaultSockets(inputs, outputs);

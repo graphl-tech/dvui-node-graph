@@ -53,7 +53,7 @@ fn imperativeFrame() anyerror!dvui.App.Result {
         dvui.label(@src(), "s", .{}, .{});
     }
 
-    graph.baseNodeEx(@src(), 3, &fx.node3_pos, ng.socketsOfType(struct { a: bool, b: f32 }, .input), ng.socketsOfType(struct { c: u8 }, .output), .{
+    graph.managedNodeEx(@src(), 3, &fx.node3_pos, ng.socketsOfType(struct { a: bool, b: f32 }, .input), ng.socketsOfType(struct { c: u8 }, .output), .{
         .title = "three",
     }, .{ .tag = "node-3" });
 
@@ -333,8 +333,8 @@ fn readmeFrame() anyerror!dvui.App.Result {
     var graph = ng.graph(@src(), .{ .style = style }, .{});
     defer graph.deinit();
 
-    // fully managed node: a named row per socket
-    graph.baseNode(@src(), 1, &model.positions[0], .{ .side = .input, .names = &.{"x"} }, .{ .side = .output, .names = &.{"s"} });
+    // a named row per socket
+    graph.managedNode(@src(), 1, &model.positions[0], .{ .side = .input, .names = &.{"x"} }, .{ .side = .output, .names = &.{"s"} });
 
     // node that draws its own socket rows; its sockets are whatever rows it declares
     {

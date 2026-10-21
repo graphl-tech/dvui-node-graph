@@ -34,8 +34,8 @@ style.node.corner_radius = 4;
 var graph = ng.graph(@src(), .{ .style = style }, .{});
 defer graph.deinit();
 
-// fully managed node: a named row per socket
-graph.baseNode(@src(), 1, &positions[0], .{ .side = .input, .names = &.{"x"} }, .{ .side = .output, .names = &.{"s"} });
+// a named row per socket
+graph.managedNode(@src(), 1, &positions[0], .{ .side = .input, .names = &.{"x"} }, .{ .side = .output, .names = &.{"s"} });
 
 // node that draws its own socket rows; its sockets are whatever rows it declares
 {
