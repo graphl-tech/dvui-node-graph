@@ -1,8 +1,8 @@
 //! `zig build demo`
 //!
-//! Drag from a socket to wire it up, drop a wire on empty space to spawn a node, click an edge
+//! Drag from a socket to link it, drop the preview edge on empty space to spawn a node, click an edge
 //! to delete it, drag nodes (shift/ctrl-drag the canvas to box select), delete/backspace removes
-//! the selection, scroll to zoom, drag the canvas to pan. "add" takes any number of inputs: wire
+//! the selection, scroll to zoom, drag the canvas to pan. "add" takes any number of inputs: link
 //! into (or click) its "+" to add one.
 
 const std = @import("std");
@@ -235,13 +235,13 @@ fn drawGraph() !void {
 
     for (graph.events()) |e| {
         switch (e) {
-            .link_created => |edge| try addEdge(edge),
+            .edge_created => |edge| try addEdge(edge),
             .socket_clicked => |s| ensureInput(s),
-            .link_clicked => |edge| for (edges.items, 0..) |x, i| if (x.eql(edge)) {
+            .edge_clicked => |edge| for (edges.items, 0..) |x, i| if (x.eql(edge)) {
                 _ = edges.orderedRemove(i);
                 break;
             },
-            .link_dropped => |drop| {
+            .preview_edge_dropped => |drop| {
                 const id = try addNode(.{ .add = .{} }, drop.point);
                 try addEdge(ng.Edge.normalized(drop.source, if (drop.source.side() == .output) .input(id, 0) else .output(id, 0)));
             },

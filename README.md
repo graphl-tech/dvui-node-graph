@@ -79,9 +79,9 @@ graph.managedNodeEx(@src(), 1, &positions[0], struct { x: f32 }, struct { s: []c
                         .click => |click| std.log.info("clicked at {any}", .{click.p}),
                         .press => {},
                     },
-                    .wire => |we| switch (we) {
+                    .preview_edge => |pe| switch (pe) {
                         .start => {},
-                        .connect => |other| std.log.info("wired to {any}", .{other}),
+                        .connect => |other| std.log.info("linked to {any}", .{other}),
                         .drop => |graph_point| std.log.info("dropped at {any}", .{graph_point}),
                     },
                 },
@@ -100,9 +100,9 @@ graph.managedNodeEx(@src(), 1, &positions[0], struct { x: f32 }, struct { s: []c
 _ = graph.link(1, .output(0), 2, .input(0)); // node 1's first output -> node 2's first input
 
 for (graph.events()) |e| switch (e) {
-    .link_created => {}, // wire released on a compatible socket (opposite sides: output -> input)
-    .link_dropped => {}, // wire released on empty canvas, `.point` is graph space
-    .link_clicked => {},
+    .edge_created => {}, // preview edge released on a compatible socket (opposite sides: output -> input)
+    .preview_edge_dropped => {}, // preview edge released on empty canvas, `.point` is graph space
+    .edge_clicked => {},
     .nodes_moved => {}, // `.nodes` moved by `.delta`
     // the selection is yours: update it here and pass each node `.selected`
     .select, .select_all, .deselect_all, .box_select => {},
@@ -114,7 +114,7 @@ for (graph.events()) |e| switch (e) {
 
 Higher level widgets expose the events of the widget it wraps through a variant of
 its own event union. e.g. `ManagedInput.Event.socket` carries a `ManagedSocket.Event`, which splits into
-`.mouse` and `.wire`. `ManagedSocket` can also be used directly.
+`.mouse` and `.preview_edge`. `ManagedSocket` can also be used directly.
 
 ## Development
 

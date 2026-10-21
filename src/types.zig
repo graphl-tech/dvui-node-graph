@@ -54,7 +54,7 @@ pub const SocketId = struct {
         return a.node == b.node and a.socket.eql(b.socket);
     }
 
-    /// Whether a wire may join `a` and `b`: different nodes, and opposite sides unless
+    /// Whether an edge may join `a` and `b`: different nodes, and opposite sides unless
     /// `allow_same_side` (e.g. a graph where outputs can feed outputs).
     pub fn canLink(a: SocketId, b: SocketId, allow_same_side: bool) bool {
         return a.node != b.node and (allow_same_side or a.side() != b.side());

@@ -18,7 +18,7 @@ const Fixture = struct {
     node1_pos: dvui.Point = .{ .x = 20, .y = 40 },
     node2_pos: dvui.Point = .{ .x = 260, .y = 140 },
     node3_pos: dvui.Point = .{ .x = 20, .y = 220 },
-    allow_same_side_links: bool = false,
+    allow_same_side_edges: bool = false,
     selected_socket: ?ng.SocketId = null,
     /// Copy of the last `nodes_moved` node list (event slices only live for one frame).
     moved_nodes: std.ArrayList(ng.NodeId) = .empty,
@@ -73,7 +73,7 @@ var fx: Fixture = .{};
 
 fn graphFrame() anyerror!dvui.App.Result {
     const alloc = std.testing.allocator;
-    var graph = ng.graph(@src(), .{ .view = &fx.view, .allow_same_side_links = fx.allow_same_side_links }, .{ .tag = "graph" });
+    var graph = ng.graph(@src(), .{ .view = &fx.view, .allow_same_side_edges = fx.allow_same_side_edges }, .{ .tag = "graph" });
     defer graph.deinit();
 
     {
@@ -123,7 +123,7 @@ fn graphFrame() anyerror!dvui.App.Result {
         try fx.events.append(alloc, e);
         try fx.applySelection(e, &.{ 1, 2, 3 });
         switch (e) {
-            .link_created => |edge| try fx.edges.append(alloc, edge),
+            .edge_created => |edge| try fx.edges.append(alloc, edge),
             .nodes_moved => |m| {
                 fx.moved_nodes.clearRetainingCapacity();
                 try fx.moved_nodes.appendSlice(alloc, m.nodes);
@@ -259,8 +259,8 @@ test "ctrl+a selects all and escape deselects" {
     try std.testing.expectEqual(0, fx.selected.items.len);
 }
 
-/// Press on `from_tag`, drag a wire onto `to_tag` and release.
-fn dragWire(t: *dvui.testing, from_tag: []const u8, to_tag: []const u8, src: std.builtin.SourceLocation) !void {
+/// Press on `from_tag`, drag a preview edge onto `to_tag` and release.
+fn dragPreviewEdge(t: *dvui.testing, from_tag: []const u8, to_tag: []const u8, src: std.builtin.SourceLocation) !void {
     const cw = dvui.currentWindow();
     const target = dvui.tagGet(to_tag).?.rect.center();
     try dvui.testing.moveTo(from_tag);
@@ -280,32 +280,32 @@ fn dragWire(t: *dvui.testing, from_tag: []const u8, to_tag: []const u8, src: std
     try dvui.testing.settle(graphFrame);
 }
 
-test "dragging a wire from an output onto an input creates a link" {
+test "dragging a preview edge from an output onto an input creates an edge" {
     var t = try initTest();
     defer t.deinit();
     defer fx.deinit();
 
     try dvui.testing.settle(graphFrame);
-    try dragWire(&t, "out-1-0", "in-2-0", @src());
+    try dragPreviewEdge(&t, "out-1-0", "in-2-0", @src());
 
     try std.testing.expectEqual(1, fx.edges.items.len);
     try std.testing.expect(fx.edges.items[0].eql(.{ .source = .output(1, 0), .target = .input(2, 0) }));
     try snapshotIfImages(&t, @src(), graphFrame);
 }
 
-test "output to output wires need allow_same_side_links" {
+test "output to output edges need allow_same_side_edges" {
     var t = try initTest();
     defer t.deinit();
     defer fx.deinit();
 
     try dvui.testing.settle(graphFrame);
-    try dragWire(&t, "out-1-0", "out-2-0", @src());
+    try dragPreviewEdge(&t, "out-1-0", "out-2-0", @src());
     try std.testing.expectEqual(0, fx.edges.items.len);
-    try std.testing.expect(fx.hasEvent(.link_dropped) != null);
+    try std.testing.expect(fx.hasEvent(.preview_edge_dropped) != null);
 
-    fx.allow_same_side_links = true;
+    fx.allow_same_side_edges = true;
     try dvui.testing.settle(graphFrame);
-    try dragWire(&t, "out-1-0", "out-2-0", @src());
+    try dragPreviewEdge(&t, "out-1-0", "out-2-0", @src());
     try std.testing.expectEqual(1, fx.edges.items.len);
     try std.testing.expect(fx.edges.items[0].eql(.{ .source = .output(1, 0), .target = .output(2, 0) }));
     try snapshotIfImages(&t, @src(), graphFrame);
@@ -327,7 +327,7 @@ test "clicking a socket reports a socket click event" {
             .click => saw_click = se.socket.eql(.input(2, 0)),
             .press => {},
         },
-        .wire => {},
+        .preview_edge => {},
     };
     try std.testing.expect(saw_click);
     try std.testing.expect(fx.hasEvent(.socket_clicked) != null);
@@ -407,9 +407,9 @@ fn readmeFrame() anyerror!dvui.App.Result {
                             .click => |click| std.log.info("clicked at {any}", .{click.p}),
                             .press => {},
                         },
-                        .wire => |we| switch (we) {
+                        .preview_edge => |pe| switch (pe) {
                             .start => {},
-                            .connect => |other| std.log.info("wired to {any}", .{other}),
+                            .connect => |other| std.log.info("linked to {any}", .{other}),
                             .drop => |graph_point| std.log.info("dropped at {any}", .{graph_point}),
                         },
                     },
@@ -428,9 +428,9 @@ fn readmeFrame() anyerror!dvui.App.Result {
     _ = graph.link(1, .output(0), 2, .input(0)); // node 1's first output -> node 2's first input
 
     for (graph.events()) |e| switch (e) {
-        .link_created => {}, // wire released on a compatible socket (opposite sides: output -> input)
-        .link_dropped => {}, // wire released on empty canvas, `.point` is graph space
-        .link_clicked => {},
+        .edge_created => {}, // preview edge released on a compatible socket (opposite sides: output -> input)
+        .preview_edge_dropped => {}, // preview edge released on empty canvas, `.point` is graph space
+        .edge_clicked => {},
         .nodes_moved => {}, // `.nodes` moved by `.delta`
         // the selection is yours: update it here and pass each node `.selected`
         .select, .select_all, .deselect_all, .box_select => {},
@@ -537,8 +537,8 @@ test "a socket the model doesn't have yet works both ways" {
         PlusFixture.events.clearRetainingCapacity();
         try dragBetween(drag[0], drag[1], PlusFixture.frame);
         var created: ?ng.Edge = null;
-        for (PlusFixture.events.items) |e| if (e == .link_created) {
-            created = e.link_created;
+        for (PlusFixture.events.items) |e| if (e == .edge_created) {
+            created = e.edge_created;
         };
         try std.testing.expect(created.?.eql(want));
     }
@@ -629,7 +629,7 @@ test "demo: the add node's + adds inputs" {
     try dvui.testing.settle(demoFrame);
     try std.testing.expectEqual(3, demoNode(3).kind.add.arity);
 
-    // wiring a number into the new + adds another input, linked
+    // linking a number into the new + adds another input with the edge
     const from = ng.GraphWidget.lastFrameSocket(gid, .output(1, 0)).?.center;
     const to = ng.GraphWidget.lastFrameSocket(gid, .input(3, 3)).?.center;
     _ = try cw.addEventMouseMotion(.{ .pt = from });

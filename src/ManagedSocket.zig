@@ -1,9 +1,9 @@
-//! A connection socket. Draws an icon, grows as the mouse approaches, and starts wire drags.
+//! A connection socket. Draws an icon, grows as the mouse approaches, and starts preview edges.
 //!
 //! Lay it out in a row (usually through `ManagedInput`/`ManagedOutput`) or place it anywhere with
 //! `.rect` in its dvui options. A socket doesn't have to exist in your model: a "+" that adds an
 //! input is just a socket with a plus icon whose id is the input you would add; handle
-//! `link_created`/`socket_clicked` for it by creating that input.
+//! `edge_created`/`socket_clicked` for it by creating that input.
 //!
 //! Events are known by the end of `init`, so `events()` is valid right after it.
 
@@ -39,24 +39,24 @@ pub const Click = struct {
 };
 
 pub const MouseEvent = union(enum) {
-    /// Pointer pressed on the socket (a wire drag may follow).
+    /// Pointer pressed on the socket (a preview edge may follow).
     press: Click,
-    /// Pressed and released without dragging a wire.
+    /// Pressed and released without dragging a preview edge.
     click: Click,
 };
 
-pub const WireEvent = union(enum) {
-    /// The user started dragging a wire out of this socket.
+pub const PreviewEdgeEvent = union(enum) {
+    /// The user started dragging a preview edge out of this socket.
     start,
-    /// The wire from this socket was released on a socket it can connect to.
+    /// The preview edge from this socket was released on a socket it can connect to.
     connect: SocketId,
-    /// The wire from this socket was released over nothing it can connect to. Graph-space point.
+    /// The preview edge from this socket was released over nothing it can connect to. Graph-space point.
     drop: dvui.Point,
 };
 
 pub const Event = union(enum) {
     mouse: MouseEvent,
-    wire: WireEvent,
+    preview_edge: PreviewEdgeEvent,
 };
 
 wd: dvui.WidgetData,
@@ -65,8 +65,8 @@ socket: SocketId,
 init_opts: InitOptions,
 events_list: std.ArrayList(Event) = .empty,
 hover: bool = false,
-/// True while a wire being dragged from elsewhere would connect here.
-wire_target: bool = false,
+/// True while a preview edge dragged from elsewhere would connect here.
+preview_target: bool = false,
 
 pub fn init(src: std.builtin.SourceLocation, graph: *GraphWidget, socket: SocketId, init_opts: InitOptions, opts: dvui.Options) *ManagedSocket {
     const self = dvui.widgetAlloc(ManagedSocket);
@@ -105,10 +105,10 @@ pub fn initInPlace(self: *ManagedSocket, src: std.builtin.SourceLocation, graph:
     const border = self.wd.borderRectScale().r;
     const center = draw.rectCenter(border);
     const radius = @min(border.w, border.h) * 0.5;
-    if (graph.wireSource()) |w| {
-        if (graph.canLink(w, socket) and dvui.currentWindow().mouse_pt.diff(center).length() <= radius) {
-            self.wire_target = true;
-            graph.setWireTarget(socket);
+    if (graph.previewEdgeSource()) |source| {
+        if (graph.canLink(source, socket) and dvui.currentWindow().mouse_pt.diff(center).length() <= radius) {
+            self.preview_target = true;
+            graph.setPreviewTarget(socket);
             dvui.cursorSet(.crosshair);
         }
     }
@@ -125,7 +125,7 @@ pub fn events(self: *const ManagedSocket) []const Event {
 }
 
 pub fn hovered(self: *const ManagedSocket) bool {
-    return self.hover or self.wire_target;
+    return self.hover or self.preview_target;
 }
 
 /// Physical border rect of the socket (full size, independent of proximity scale).
