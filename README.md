@@ -9,6 +9,8 @@ This branch is for zig 0.16
 > Generative AI was used to edit and/or produce large portions of this code.
 > Every source code line was verified by a human.
 
+![demo project screenshot](./images/demo-screenshot.png)
+
 ## Using in your project
 
 Add this project as a dependency:
