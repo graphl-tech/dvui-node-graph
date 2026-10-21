@@ -6,8 +6,8 @@ Developed for [graphl](https://graphl.tech/demo).
 This branch is for zig 0.16
 
 > [!WARNING]
-> Generative AI was used to produce large portions of the code.
-> Every line and comment was verified by a human.
+> Generative AI was used to edit and/or produce large portions of this code.
+> Every source code line was verified by a human.
 
 ## Using in your project
 
