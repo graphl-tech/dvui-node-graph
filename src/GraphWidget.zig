@@ -964,7 +964,7 @@ fn drawWirePreview(self: *GraphWidget, start: Physical, start_side: types.Side, 
     const end = if (target) |t| t.center else free;
     // a free end points back toward the source
     const end_dir = if (target) |t| sideDir(t.id.side()) else if (end.x >= start.x) @as(f32, -1) else 1;
-    const ws = self.style().wire;
+    const ws = self.style().preview_edge;
     const es = self.style().edge;
     const pts = draw.edgePointsCurved(arena(), start, sideDir(start_side), end, end_dir, es.curvature, es.min_tangent) catch return;
     const alpha: f32 = if (target != null) 1.0 else ws.loose_opacity;

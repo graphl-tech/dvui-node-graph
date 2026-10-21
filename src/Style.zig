@@ -1,12 +1,10 @@
-//! Visual style of a graph. Every field defaults to the stock look, so start from
-//! `Style.default` and change what you need:
+//! Visual style of a graph, with a stock default theme. Change what you need like:
 //!
 //!     var style = ng.Style.default;
 //!     style.edge.shadow = null;
 //!     var graph = ng.graph(@src(), .{ .style = style }, .{});
 //!
-//! Colors left null are derived from the dvui theme each frame. Shadows and decorations are
-//! optional; null turns them off.
+//! Colors left null are derived from the dvui theme each frame.
 
 const dvui = @import("dvui");
 
@@ -16,7 +14,7 @@ pub const default: Style = .{};
 
 node: Node = .{},
 edge: Edge = .{},
-wire: Wire = .{},
+preview_edge: PreviewEdge = .{},
 socket: Socket = .{},
 canvas: Canvas = .{},
 selection: Selection = .{},
@@ -44,8 +42,11 @@ pub const Node = struct {
     shadow: ?dvui.Options.BoxShadow = .{ .alpha = 0.25, .fade = 10 },
 };
 
+/// description for a dashed line pattern
 pub const Dash = struct {
+    /// physical pixel length of dash
     on: f32 = 14,
+    /// physical pixel length of non-dash before next dash
     off: f32 = 8.75,
 };
 
@@ -73,13 +74,13 @@ pub const Edge = struct {
     hover_dashed: bool = true,
 };
 
-/// The wire that follows the mouse while connecting sockets.
-pub const Wire = struct {
+/// The edge that follows the mouse while connecting sockets.
+pub const PreviewEdge = struct {
     /// Theme text color.
     color: ?dvui.Color = null,
     /// Natural pixels at zoom 1 (never thinner than 2 physical pixels).
     thickness: f32 = 1.5,
-    /// Opacity while the wire is not over a socket it could connect to.
+    /// Opacity while not over a socket it could connect to.
     loose_opacity: f32 = 0.6,
     dash: Dash = .{},
 };
