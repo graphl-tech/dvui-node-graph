@@ -23,6 +23,8 @@ zig build test-images   # same tests on SDL3, writes PNGs to snapshots/images
 const ng = @import("dvui_node_graph");
 
 var positions = [_]dvui.Point{ .{ .x = 20, .y = 40 }, .{ .x = 260, .y = 140 } };
+// can change from frame to frame
+var input_names: []const []const u8 = &.{ "a", "b" };
 
 // start from the default style and override what you need
 var style = ng.Style.default;
@@ -32,18 +34,19 @@ style.node.corner_radius = 4;
 var graph = ng.graph(@src(), .{ .style = style }, .{});
 defer graph.deinit();
 
-// a default node
-graph.baseNode(@src(), 1, &positions[0], struct { x: i32 }, struct { s: []const u8 });
+// fully managed node: a named row per socket
+graph.baseNode(@src(), 1, &positions[0], .{ .side = .input, .names = &.{"x"} }, .{ .side = .output, .names = &.{"s"} });
 
+// node that draws its own socket rows; its sockets are whatever rows it declares
 {
-    var node = graph.node(@src(), 2, &positions[1], struct { s: []const u8 }, struct {}, .{ .title = "two" }, .{});
+    var node = graph.node(@src(), 2, &positions[1], .{ .title = "two" }, .{});
     defer node.deinit();
 
-    for (0..node.inputs.len()) |i| {
-        var row = ng.BaseInput.init(@src(), node, i, .{ .id_extra = i });
+    for (input_names, 0..) |name, i| {
+        var row = ng.BaseInput.init(@src(), node, i, .{ .id_extra = i }); // socket .input(i)
         defer row.deinit();
         // anything drawn here lands next to the socket
-        dvui.label(@src(), "{s}", .{row.name()}, .{});
+        dvui.label(@src(), "{s}", .{name}, .{});
 
         for (row.events()) |e| switch (e) {
             .socket => |se| switch (se) {
@@ -59,7 +62,7 @@ graph.baseNode(@src(), 1, &positions[0], struct { x: i32 }, struct { s: []const 
             },
         };
     }
-    for (0..node.outputs.len()) |i| node.baseOutput(@src(), i, .{ .id_extra = i });
+    node.baseOutput(@src(), 0, "out", .{}); // shorthand for a row with just a label
 }
 
 // edges go after the nodes that own their sockets
@@ -88,7 +91,7 @@ const Add = ng.declarative.NodeType(struct { a: i32, b: i32 }, struct { sum: i32
 const events = ng.declarative.graph(@src(), &app, .{
     .nodes = &.{ Add.nodeAt(1, "add", .{ .x = 20, .y = 20 }), Add.node(2, "add") },
     .edges = &.{.{ .source = .output(1, 0), .target = .input(2, 0) }},
-    .draw_input_label = App.drawInputLabel, // fn (*App, *ng.BaseInput, ng.declarative.Node) void
+    .draw_input_label = App.drawInputLabel, // fn (*App, *ng.BaseInput, ng.declarative.Node, []const u8) void
     .on_click_socket = App.onClickSocket, // fn (*App, ng.SocketId, ng.BaseSocket.Click) void
     .on_event = App.onEvent, // fn (*App, ng.GraphWidget.Event) void
 }, .{});

@@ -57,8 +57,9 @@ pub fn Spec(comptime Ctx: type) type {
         /// Replace the default title row.
         draw_node_title: ?*const fn (ctx: Ctx, node: *BaseNode, desc: Node) void = null,
         /// Replace the name label of an input row; draw into the row (it is the current parent).
-        draw_input_label: ?*const fn (ctx: Ctx, row: *socket_row.BaseInput, desc: Node) void = null,
-        draw_output_label: ?*const fn (ctx: Ctx, row: *socket_row.BaseOutput, desc: Node) void = null,
+        /// `name` is the socket's entry in `desc.inputs.names`.
+        draw_input_label: ?*const fn (ctx: Ctx, row: *socket_row.BaseInput, desc: Node, name: []const u8) void = null,
+        draw_output_label: ?*const fn (ctx: Ctx, row: *socket_row.BaseOutput, desc: Node, name: []const u8) void = null,
         /// Every event from every socket.
         on_socket_event: ?*const fn (ctx: Ctx, socket: SocketId, event: BaseSocket.Event) void = null,
         /// Shorthand for `on_socket_event` filtered to clicks.
@@ -83,14 +84,16 @@ pub fn graph(src: std.builtin.SourceLocation, ctx: anytype, spec: Spec(@TypeOf(c
     defer g.deinit();
 
     for (spec.nodes) |desc| {
-        var n = BaseNode.init(@src(), g, desc.id, positionPtr(g, desc), desc.inputs, desc.outputs, .{}, .{});
+        var n = BaseNode.init(@src(), g, desc.id, positionPtr(g, desc), .{}, .{});
         defer n.deinit();
 
         if (spec.draw_node_title) |f| f(ctx, n, desc) else if (desc.title) |t| n.titleLabel("{s}", .{t});
 
         inline for (.{ socket_row.BaseInput, socket_row.BaseOutput }, .{ desc.inputs, desc.outputs }, .{ spec.draw_input_label, spec.draw_output_label }) |Row, list, draw_label| {
             for (0..list.len()) |i| {
-                var row = Row.init(@src(), n, i, .{ .id_extra = i });
+                var row = Row.initEx(@src(), n, list.socket(i).index, .{
+                    .socket = .{ .style = list.style(i), .color = list.color(i) },
+                }, .{ .id_extra = i });
                 defer row.deinit();
                 for (row.events()) |e| switch (e) {
                     .socket => |se| {
@@ -104,7 +107,7 @@ pub fn graph(src: std.builtin.SourceLocation, ctx: anytype, spec: Spec(@TypeOf(c
                         };
                     },
                 };
-                if (draw_label) |f| f(ctx, row, desc) else dvui.label(@src(), "{s}", .{row.name()}, .{});
+                if (draw_label) |f| f(ctx, row, desc, list.names[i]) else dvui.label(@src(), "{s}", .{list.names[i]}, .{});
             }
         }
     }

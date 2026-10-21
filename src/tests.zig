@@ -45,41 +45,35 @@ fn imperativeFrame() anyerror!dvui.App.Result {
     defer graph.deinit();
 
     {
-        var node = graph.node(@src(), 1, &fx.node1_pos, struct { x: i32 }, struct { s: []const u8 }, .{
-            .title = "one",
-        }, .{ .tag = "node-1" });
+        var node = graph.node(@src(), 1, &fx.node1_pos, .{ .title = "one" }, .{ .tag = "node-1" });
         defer node.deinit();
-        for (0..node.inputs.len()) |i| node.baseInput(@src(), i, .{ .id_extra = i });
-        for (0..node.outputs.len()) |i| {
-            var row = ng.BaseOutput.initEx(@src(), node, i, .{ .socket_opts = .{ .tag = "out-1-0" } }, .{ .id_extra = i });
-            defer row.deinit();
-            dvui.label(@src(), "{s}", .{row.name()}, .{});
-        }
+        node.baseInput(@src(), 0, "x", .{});
+        var row = ng.BaseOutput.initEx(@src(), node, 0, .{ .socket_opts = .{ .tag = "out-1-0" } }, .{});
+        defer row.deinit();
+        dvui.label(@src(), "s", .{}, .{});
     }
 
-    graph.baseNodeEx(@src(), 3, &fx.node3_pos, struct { a: bool, b: f32 }, struct { c: u8 }, .{
+    graph.baseNodeEx(@src(), 3, &fx.node3_pos, ng.socketsOfType(struct { a: bool, b: f32 }, .input), ng.socketsOfType(struct { c: u8 }, .output), .{
         .title = "three",
     }, .{ .tag = "node-3" });
 
     {
-        var node = graph.node(@src(), 2, &fx.node2_pos, struct { s: []const u8 }, struct { out: f32 }, .{
-            .title = "two",
-        }, .{ .tag = "node-2" });
+        var node = graph.node(@src(), 2, &fx.node2_pos, .{ .title = "two" }, .{ .tag = "node-2" });
         defer node.deinit();
 
-        for (0..node.inputs.len()) |i| {
-            var row = ng.BaseInput.initEx(@src(), node, i, .{ .socket_opts = .{ .tag = "in-2-0" } }, .{ .id_extra = i });
+        {
+            var row = ng.BaseInput.initEx(@src(), node, 0, .{ .socket_opts = .{ .tag = "in-2-0" } }, .{});
             defer row.deinit();
-            dvui.labelNoFmt(@src(), row.name(), .{}, .{});
+            dvui.labelNoFmt(@src(), "s", .{}, .{});
 
             for (row.events()) |e| switch (e) {
                 .socket => |se| try fx.socket_events.append(alloc, .{ .socket = row.socketId(), .event = se }),
             };
         }
-        for (0..node.outputs.len()) |i| {
-            var row = ng.BaseOutput.initEx(@src(), node, i, .{ .socket_opts = .{ .tag = "out-2-0" } }, .{ .id_extra = i });
+        {
+            var row = ng.BaseOutput.initEx(@src(), node, 0, .{ .socket_opts = .{ .tag = "out-2-0" } }, .{});
             defer row.deinit();
-            dvui.label(@src(), "{s}", .{row.name()}, .{});
+            dvui.label(@src(), "out", .{}, .{});
         }
     }
 
@@ -289,9 +283,10 @@ const Decl = struct {
         if (e == .link_created) self.links += 1;
     }
 
-    fn drawInputLabel(self: *Decl, row: *ng.BaseInput, desc: ng.declarative.Node) void {
+    fn drawInputLabel(self: *Decl, row: *ng.BaseInput, desc: ng.declarative.Node, name: []const u8) void {
         _ = self;
-        dvui.label(@src(), "{s}.{s}", .{ desc.title orelse "?", row.name() }, .{});
+        _ = row;
+        dvui.label(@src(), "{s}.{s}", .{ desc.title orelse "?", name }, .{});
     }
 };
 var decl: Decl = .{};
@@ -326,6 +321,8 @@ fn readmeFrame() anyerror!dvui.App.Result {
     // node positions live in your model; dragging a node writes through its pointer
     const model = struct {
         var positions = [_]dvui.Point{ .{ .x = 20, .y = 40 }, .{ .x = 260, .y = 140 } };
+        // can change from frame to frame
+        var input_names: []const []const u8 = &.{ "a", "b" };
     };
 
     // start from the default style and override what you need
@@ -336,18 +333,19 @@ fn readmeFrame() anyerror!dvui.App.Result {
     var graph = ng.graph(@src(), .{ .style = style }, .{});
     defer graph.deinit();
 
-    // a default node
-    graph.baseNode(@src(), 1, &model.positions[0], struct { x: i32 }, struct { s: []const u8 });
+    // fully managed node: a named row per socket
+    graph.baseNode(@src(), 1, &model.positions[0], .{ .side = .input, .names = &.{"x"} }, .{ .side = .output, .names = &.{"s"} });
 
+    // node that draws its own socket rows; its sockets are whatever rows it declares
     {
-        var node = graph.node(@src(), 2, &model.positions[1], struct { s: []const u8 }, struct {}, .{ .title = "two" }, .{});
+        var node = graph.node(@src(), 2, &model.positions[1], .{ .title = "two" }, .{});
         defer node.deinit();
 
-        for (0..node.inputs.len()) |i| {
-            var row = ng.BaseInput.init(@src(), node, i, .{ .id_extra = i });
+        for (model.input_names, 0..) |name, i| {
+            var row = ng.BaseInput.init(@src(), node, i, .{ .id_extra = i }); // socket .input(i)
             defer row.deinit();
             // anything drawn here lands next to the socket
-            dvui.label(@src(), "{s}", .{row.name()}, .{});
+            dvui.label(@src(), "{s}", .{name}, .{});
 
             for (row.events()) |e| switch (e) {
                 .socket => |se| switch (se) {
@@ -363,7 +361,7 @@ fn readmeFrame() anyerror!dvui.App.Result {
                 },
             };
         }
-        for (0..node.outputs.len()) |i| node.baseOutput(@src(), i, .{ .id_extra = i });
+        node.baseOutput(@src(), 0, "out", .{}); // shorthand for a row with just a label
     }
 
     // edges go after the nodes that own their sockets
@@ -417,16 +415,16 @@ const PlusFixture = struct {
         defer graph.deinit();
 
         {
-            var node = graph.node(@src(), 1, &positions[0], struct {}, struct { out: i32 }, .{}, .{ .tag = "pn-1" });
+            var node = graph.node(@src(), 1, &positions[0], .{}, .{ .tag = "pn-1" });
             defer node.deinit();
             var row = ng.BaseOutput.initEx(@src(), node, 0, .{ .socket_opts = .{ .tag = "pn-out" } }, .{});
             defer row.deinit();
-            dvui.label(@src(), "{s}", .{row.name()}, .{});
+            dvui.label(@src(), "out", .{}, .{});
         }
         {
-            var node = graph.node(@src(), 2, &positions[1], struct { a: i32 }, struct {}, .{}, .{ .tag = "pn-2" });
+            var node = graph.node(@src(), 2, &positions[1], .{}, .{ .tag = "pn-2" });
             defer node.deinit();
-            node.baseInput(@src(), 0, .{});
+            node.baseInput(@src(), 0, "a", .{});
             // floats left of the card, not part of the layout
             const card = node.card.data().borderRectScale().r;
             var plus = ng.BaseSocket.init(@src(), graph, .input(2, 5), .{

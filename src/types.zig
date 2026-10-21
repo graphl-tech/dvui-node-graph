@@ -122,14 +122,6 @@ pub const Sockets = struct {
     }
 };
 
-/// One side's sockets from either a `Sockets` or a struct type whose fields become sockets in
-/// declaration order.
-pub fn sockets(comptime side: Side, from: anytype) Sockets {
-    if (@TypeOf(from) == Sockets) return from;
-    if (@TypeOf(from) != type) @compileError("expected a struct type or Sockets, found " ++ @typeName(@TypeOf(from)));
-    return comptime socketsOfType(from, side);
-}
-
 /// Sockets named after the fields of a struct type. Usable at comptime.
 pub fn socketsOfType(comptime T: type, comptime side: Side) Sockets {
     const S = struct {
@@ -142,14 +134,6 @@ pub fn socketsOfType(comptime T: type, comptime side: Side) Sockets {
         };
     };
     return .{ .side = side, .names = &S.names };
-}
-
-test sockets {
-    const ps = sockets(.input, struct { x: i32, s: []const u8, b: bool });
-    try std.testing.expectEqual(3, ps.len());
-    try std.testing.expectEqualStrings("x", ps.names[0]);
-    try std.testing.expect(ps.socket(2).eql(.input(2)));
-    try std.testing.expectEqual(1, sockets(.output, Sockets{ .side = .output, .names = &.{"a"} }).len());
 }
 
 test socketsOfType {

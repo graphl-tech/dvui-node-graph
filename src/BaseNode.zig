@@ -1,6 +1,6 @@
-//! A draggable, selectable node. Lay out its sockets with `BaseInput`/`BaseOutput` (or call
-//! `defaultSockets`). Inputs stack in a left column and outputs in a right column; declare all
-//! inputs before any outputs.
+//! A draggable, selectable node. Its sockets are whatever rows you declare with
+//! `BaseInput`/`BaseOutput` (or `defaultSockets` for a `Sockets` description). Inputs stack in a
+//! left column and outputs in a right column; declare all inputs before any outputs.
 
 const std = @import("std");
 const dvui = @import("dvui");
@@ -29,8 +29,6 @@ pub const InitOptions = struct {
 
 graph: *GraphWidget,
 id: NodeId,
-inputs: Sockets,
-outputs: Sockets,
 init_opts: InitOptions,
 position: *dvui.Point,
 selected: bool,
@@ -50,13 +48,11 @@ pub fn init(
     graph: *GraphWidget,
     id: NodeId,
     position: *dvui.Point,
-    inputs: anytype,
-    outputs: anytype,
     init_opts: InitOptions,
     opts: dvui.Options,
 ) *BaseNode {
     const self = dvui.widgetAlloc(BaseNode);
-    self.initInPlace(src, graph, id, position, types.sockets(.input, inputs), types.sockets(.output, outputs), init_opts, opts);
+    self.initInPlace(src, graph, id, position, init_opts, opts);
     return self;
 }
 
@@ -67,8 +63,6 @@ pub fn initInPlace(
     graph: *GraphWidget,
     id: NodeId,
     position: *dvui.Point,
-    inputs: Sockets,
-    outputs: Sockets,
     init_opts: InitOptions,
     opts: dvui.Options,
 ) void {
@@ -76,8 +70,6 @@ pub fn initInPlace(
     self.* = .{
         .graph = graph,
         .id = id,
-        .inputs = inputs,
-        .outputs = outputs,
         .init_opts = init_opts,
         .position = position,
         .selected = graph.isSelected(id),
@@ -159,31 +151,35 @@ pub fn beginColumn(self: *BaseNode, side: types.Side) void {
     self.column_side = side;
 }
 
-/// Render every input and output with its name.
-pub fn defaultSockets(self: *BaseNode) void {
-    for (0..self.inputs.len()) |i| self.baseInput(@src(), i, .{ .id_extra = i });
-    for (0..self.outputs.len()) |i| self.baseOutput(@src(), i, .{ .id_extra = i });
+/// Render a row showing its name for every socket in `inputs` and `outputs`.
+pub fn defaultSockets(self: *BaseNode, inputs: Sockets, outputs: Sockets) void {
+    self.namedRows(.input, inputs);
+    self.namedRows(.output, outputs);
 }
 
-/// Row for input socket `index` showing its name.
-pub fn baseInput(self: *BaseNode, src: std.builtin.SourceLocation, index: usize, opts: dvui.Options) void {
+fn namedRows(self: *BaseNode, comptime side: types.Side, ss: Sockets) void {
+    std.debug.assert(ss.side == side);
+    for (0..ss.len()) |i| {
+        var w = socket_row.SocketRow(side).initEx(@src(), self, ss.socket(i).index, .{
+            .socket = .{ .style = ss.style(i), .color = ss.color(i) },
+        }, .{ .id_extra = i });
+        defer w.deinit();
+        dvui.label(@src(), "{s}", .{ss.names[i]}, .{});
+    }
+}
+
+/// Row for input socket `index` showing `name`.
+pub fn baseInput(self: *BaseNode, src: std.builtin.SourceLocation, index: usize, name: []const u8, opts: dvui.Options) void {
     var w = socket_row.BaseInput.init(src, self, index, opts);
     defer w.deinit();
-    dvui.label(@src(), "{s}", .{w.name()}, .{});
+    dvui.label(@src(), "{s}", .{name}, .{});
 }
 
-/// Row for output socket `index` showing its name.
-pub fn baseOutput(self: *BaseNode, src: std.builtin.SourceLocation, index: usize, opts: dvui.Options) void {
+/// Row for output socket `index` showing `name`.
+pub fn baseOutput(self: *BaseNode, src: std.builtin.SourceLocation, index: usize, name: []const u8, opts: dvui.Options) void {
     var w = socket_row.BaseOutput.init(src, self, index, opts);
     defer w.deinit();
-    dvui.label(@src(), "{s}", .{w.name()}, .{});
-}
-
-pub fn sideSockets(self: *const BaseNode, side: types.Side) Sockets {
-    return switch (side) {
-        .input => self.inputs,
-        .output => self.outputs,
-    };
+    dvui.label(@src(), "{s}", .{name}, .{});
 }
 
 pub fn data(self: *BaseNode) *dvui.WidgetData {

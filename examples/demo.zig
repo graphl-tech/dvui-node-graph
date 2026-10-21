@@ -162,15 +162,14 @@ fn imperativeGraph() !void {
     defer graph.deinit();
 
     for (nodes.items) |*n| {
-        var node = graph.node(@src(), n.id, &n.position, try inputsOf(n), outputsOf(n.kind), .{
-            .title = @tagName(n.kind),
-        }, .{});
+        var node = graph.node(@src(), n.id, &n.position, .{ .title = @tagName(n.kind) }, .{});
         defer node.deinit();
 
-        for (0..node.inputs.len()) |i| {
-            var row = ng.BaseInput.init(@src(), node, i, .{ .id_extra = i });
+        const ins = try inputsOf(n);
+        for (ins.names, 0..) |name, i| {
+            var row = ng.BaseInput.initEx(@src(), node, i, .{ .socket = .{ .style = ins.style(i) } }, .{ .id_extra = i });
             defer row.deinit();
-            dvui.label(@src(), "{s}", .{row.name()}, .{});
+            dvui.label(@src(), "{s}", .{name}, .{});
 
             for (row.events()) |e| switch (e) {
                 .socket => |se| switch (se) {
@@ -189,7 +188,12 @@ fn imperativeGraph() !void {
             defer row.deinit();
             _ = dvui.textEntryNumber(@src(), f32, .{ .value = &n.value }, (dvui.Options{ .gravity_y = 0.5 }));
         } else {
-            for (0..node.outputs.len()) |i| node.baseOutput(@src(), i, .{ .id_extra = i });
+            const outs = outputsOf(n.kind);
+            for (outs.names, 0..) |name, i| {
+                var row = ng.BaseOutput.initEx(@src(), node, i, .{ .socket = .{ .style = outs.style(i) } }, .{ .id_extra = i });
+                defer row.deinit();
+                dvui.label(@src(), "{s}", .{name}, .{});
+            }
         }
     }
 

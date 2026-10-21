@@ -22,15 +22,14 @@ pub fn SocketRow(comptime side: types.Side) type {
         };
 
         pub const InitOptions = struct {
-            /// Overrides the socket's `styles`/`colors` columns and the socket defaults.
-            socket: ?BaseSocket.InitOptions = null,
+            socket: BaseSocket.InitOptions = .{},
             /// dvui options for the socket widget (e.g. `.tag`).
             socket_opts: dvui.Options = .{},
         };
 
         node: *BaseNode,
-        /// Index into the node's `inputs`/`outputs`.
-        index: usize,
+        /// The socket's index on its side: the row is socket `(side, index)` of its node.
+        index: u31,
         row: dvui.BoxWidget = undefined,
         content: dvui.BoxWidget = undefined,
         events_list: []const Event = &.{},
@@ -44,16 +43,14 @@ pub fn SocketRow(comptime side: types.Side) type {
 
         pub fn initEx(src: std.builtin.SourceLocation, node: *BaseNode, index: usize, init_opts: InitOptions, opts: dvui.Options) *Self {
             const self = dvui.widgetAlloc(Self);
-            self.* = .{ .node = node, .index = index };
-            const ss = self.sockets();
+            self.* = .{ .node = node, .index = @intCast(index) };
             node.beginColumn(side);
 
             const gravity_x: f32 = if (side == .output) 1 else 0;
             const defaults: dvui.Options = .{ .expand = .horizontal, .gravity_x = gravity_x };
             self.row.init(src, .{ .dir = .horizontal }, defaults.override(opts));
 
-            const socket_opts = init_opts.socket orelse BaseSocket.InitOptions{ .style = ss.style(index), .color = ss.color(index) };
-            var socket = BaseSocket.init(@src(), node.graph, self.socketId(), socket_opts, init_opts.socket_opts);
+            var socket = BaseSocket.init(@src(), node.graph, self.socketId(), init_opts.socket, init_opts.socket_opts);
             const socket_events = socket.events();
             self.socket_hovered = socket.hovered();
             self.socket_rect = socket.rect();
@@ -71,20 +68,12 @@ pub fn SocketRow(comptime side: types.Side) type {
             return self;
         }
 
-        pub fn sockets(self: *const Self) types.Sockets {
-            return self.node.sideSockets(side);
-        }
-
         pub fn events(self: *const Self) []const Event {
             return self.events_list;
         }
 
         pub fn socketId(self: *const Self) types.SocketId {
-            return self.sockets().socketId(self.node.id, self.index);
-        }
-
-        pub fn name(self: *const Self) []const u8 {
-            return self.sockets().names[self.index];
+            return .{ .node = self.node.id, .socket = .{ .side = side, .index = self.index } };
         }
 
         pub fn deinit(self: *Self) void {

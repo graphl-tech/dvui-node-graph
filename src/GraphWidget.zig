@@ -29,6 +29,7 @@ const NodeId = types.NodeId;
 const Socket = types.Socket;
 const SocketId = types.SocketId;
 const Edge = types.Edge;
+const Sockets = types.Sockets;
 const Physical = dvui.Point.Physical;
 
 const GraphWidget = @This();
@@ -446,22 +447,21 @@ fn queueSocketEvent(self: *GraphWidget, s: SocketId, e: BaseSocket.Event) void {
 // Declaring nodes and edges
 // ---------------------------------------------------------------------------------------------
 
-/// Begin a node at `position` (graph space, written by drags) whose sockets are derived from
-/// `inputs`/`outputs` (struct types or `Sockets`). The caller lays out its sockets (see
-/// `BaseInput`/`BaseOutput`) and must `deinit` it.
-pub fn node(self: *GraphWidget, src: std.builtin.SourceLocation, node_id: NodeId, position: *dvui.Point, inputs: anytype, outputs: anytype, init_opts: BaseNode.InitOptions, opts: dvui.Options) *BaseNode {
-    return BaseNode.init(src, self, node_id, position, inputs, outputs, init_opts, opts);
+/// Begin a node at `position` (graph space, written by drags). Its sockets are the rows the
+/// caller declares (see `BaseInput`/`BaseOutput`); the caller must `deinit` it.
+pub fn node(self: *GraphWidget, src: std.builtin.SourceLocation, node_id: NodeId, position: *dvui.Point, init_opts: BaseNode.InitOptions, opts: dvui.Options) *BaseNode {
+    return BaseNode.init(src, self, node_id, position, init_opts, opts);
 }
 
-/// Render a complete node with default socket rows.
-pub fn baseNode(self: *GraphWidget, src: std.builtin.SourceLocation, node_id: NodeId, position: *dvui.Point, inputs: anytype, outputs: anytype) void {
+/// Render a complete node with a named row for each of `inputs` and `outputs`.
+pub fn baseNode(self: *GraphWidget, src: std.builtin.SourceLocation, node_id: NodeId, position: *dvui.Point, inputs: Sockets, outputs: Sockets) void {
     self.baseNodeEx(src, node_id, position, inputs, outputs, .{}, .{});
 }
 
-pub fn baseNodeEx(self: *GraphWidget, src: std.builtin.SourceLocation, node_id: NodeId, position: *dvui.Point, inputs: anytype, outputs: anytype, init_opts: BaseNode.InitOptions, opts: dvui.Options) void {
-    var n = BaseNode.init(src, self, node_id, position, inputs, outputs, init_opts, opts);
+pub fn baseNodeEx(self: *GraphWidget, src: std.builtin.SourceLocation, node_id: NodeId, position: *dvui.Point, inputs: Sockets, outputs: Sockets, init_opts: BaseNode.InitOptions, opts: dvui.Options) void {
+    var n = BaseNode.init(src, self, node_id, position, init_opts, opts);
     defer n.deinit();
-    n.defaultSockets();
+    n.defaultSockets(inputs, outputs);
 }
 
 pub const LinkOptions = struct {
