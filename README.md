@@ -35,6 +35,9 @@ ng_mod.addImport("dvui", dvui_module);
 - DVUI-like high-level graph event API
 - imperative selection management
 - positive and negative box select
+- dashed line effects for edges
+- drag or click based node linking
+- configurable bezier links
 
 ## Example
 
