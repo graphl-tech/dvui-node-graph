@@ -30,6 +30,7 @@ ng_mod.addImport("dvui", dvui_module);
 
 - zoomable, pannable graph with grid
 - imperative API with managed and unmanaged widgets for your chosen level of flexibility
+- DVUI-like high-level graph event API
 - imperative selection management
 - positive and negative box select
 
@@ -86,7 +87,7 @@ graph.managedNodeEx(@src(), 1, &positions[0], struct { x: f32 }, struct { s: []c
                 },
             };
         }
-        area.managedOutput(@src(), 0, "out", .{}); // shorthand for a output with just a label
+        area.managedOutput(@src(), 0, "out", .{}); // shorthand for an output with just a label
     }
     {
         var footer = node.footer(@src(), .{});

@@ -104,7 +104,7 @@ const NodeRecord = struct {
     selected: bool,
 };
 
-const QueuedSocketEvent = struct {
+const SocketEvent = struct {
     socket: SocketId,
     event: ManagedSocket.Event,
 };
@@ -169,9 +169,9 @@ connected: std.ArrayList(SocketId) = .empty,
 ended_drag: ?NodeDrag = null,
 events_list: std.ArrayList(Event) = .empty,
 /// Socket events for this frame, picked up by the matching `ManagedSocket`.
-socket_events: std.ArrayList(QueuedSocketEvent) = .empty,
+socket_events: std.ArrayList(SocketEvent) = .empty,
 /// Socket events produced after sockets rendered; delivered next frame.
-late_socket_events: std.ArrayList(QueuedSocketEvent) = .empty,
+late_socket_events: std.ArrayList(SocketEvent) = .empty,
 sockets_done: bool = false,
 
 /// Socket nearest the mouse last frame; the only one that grows with proximity.
@@ -239,7 +239,7 @@ pub fn initInPlace(self: *GraphWidget, src: std.builtin.SourceLocation, init_opt
     self.socket_index.ensureTotalCapacity(arena(), @intCast(self.prev_sockets.len)) catch {};
     self.nodes.ensureTotalCapacity(arena(), self.prev_nodes.len) catch {};
     self.connected.ensureTotalCapacity(arena(), self.prev_connected.len) catch {};
-    if (dvui.dataGetSlice(null, wd_id, "_late_socket_events", []QueuedSocketEvent)) |late| {
+    if (dvui.dataGetSlice(null, wd_id, "_late_socket_events", []SocketEvent)) |late| {
         self.socket_events.appendSlice(arena(), late) catch {};
         dvui.dataRemove(null, wd_id, "_late_socket_events");
     }
