@@ -52,7 +52,7 @@ var graph = ng.graph(@src(), .{ .style = style }, .{});
 defer graph.deinit();
 
 // a title and a named row per field
-graph.managedNodeEx(@src(), 1, &positions[0], struct { x: f32 }, struct { s: []const u8 }, .{ .title = "one" }, .{});
+graph.managedNode(@src(), 1, &positions[0], struct { x: f32 }, struct { s: []const u8 }, .{ .title = "one" }, .{});
 
 // node that draws everything itself; its sockets are whatever rows it declares
 {
@@ -68,7 +68,7 @@ graph.managedNodeEx(@src(), 1, &positions[0], struct { x: f32 }, struct { s: []c
         var area = node.socketArea(@src(), .{});
         defer area.deinit();
         for (input_names, 0..) |name, i| {
-            var row = ng.ManagedInput.init(@src(), area, i, .{ .id_extra = i }); // socket .input(i)
+            var row = ng.Input.init(@src(), area, i, .{ .id_extra = i }); // socket .input(i)
             defer row.deinit();
             // anything drawn here is next to the socket
             dvui.label(@src(), "{s}", .{name}, .{});
@@ -113,8 +113,8 @@ for (graph.events()) |e| switch (e) {
 ```
 
 Higher level widgets expose the events of the widget it wraps through a variant of
-its own event union. e.g. `ManagedInput.Event.socket` carries a `ManagedSocket.Event`, which splits into
-`.mouse` and `.preview_edge`. `ManagedSocket` can also be used directly.
+its own event union. e.g. `Input.Event.socket` carries a `SocketWidget.Event`, which splits into
+`.mouse` and `.preview_edge`. `SocketWidget` can also be used directly.
 
 ## Development
 

@@ -1,6 +1,8 @@
 //! A draggable, selectable node card. Everything is drawn by the caller, top to bottom: a
 //! `header` (e.g. a title label), then the socket rows inside `socketArea`, then any `footer`
 //! sections.
+//!
+//! For a node drawn for you from struct types, see `GraphWidget.managedNode`.
 
 const std = @import("std");
 const dvui = @import("dvui");
@@ -13,7 +15,7 @@ const SocketArea = @import("SocketArea.zig");
 
 const NodeId = types.NodeId;
 
-const ManagedNode = @This();
+const Node = @This();
 
 pub const InitOptions = struct {
     /// The app's selection state for this node. Changes arrive as `GraphWidget.Event`s
@@ -52,15 +54,15 @@ pub fn init(
     position: *dvui.Point,
     init_opts: InitOptions,
     opts: dvui.Options,
-) *ManagedNode {
-    const self = dvui.widgetAlloc(ManagedNode);
+) *Node {
+    const self = dvui.widgetAlloc(Node);
     self.initInPlace(src, graph, id, position, init_opts, opts);
     return self;
 }
 
 /// It's expected to call this when `self` is `undefined`.
 pub fn initInPlace(
-    self: *ManagedNode,
+    self: *Node,
     src: std.builtin.SourceLocation,
     graph: *GraphWidget,
     id: NodeId,
@@ -126,21 +128,21 @@ pub fn initInPlace(
 }
 
 /// Begin a section above the socket rows. The caller must `deinit` it.
-pub fn header(self: *ManagedNode, src: std.builtin.SourceLocation, opts: dvui.Options) *dvui.BoxWidget {
+pub fn header(self: *Node, src: std.builtin.SourceLocation, opts: dvui.Options) *dvui.BoxWidget {
     return self.section(src, "header", opts);
 }
 
 /// Begin the socket rows. The caller must `deinit` it.
-pub fn socketArea(self: *ManagedNode, src: std.builtin.SourceLocation, opts: dvui.Options) *SocketArea {
+pub fn socketArea(self: *Node, src: std.builtin.SourceLocation, opts: dvui.Options) *SocketArea {
     return SocketArea.init(src, self, opts);
 }
 
 /// Begin a section below the socket rows. The caller must `deinit` it.
-pub fn footer(self: *ManagedNode, src: std.builtin.SourceLocation, opts: dvui.Options) *dvui.BoxWidget {
+pub fn footer(self: *Node, src: std.builtin.SourceLocation, opts: dvui.Options) *dvui.BoxWidget {
     return self.section(src, "footer", opts);
 }
 
-fn section(self: *ManagedNode, src: std.builtin.SourceLocation, name: []const u8, opts: dvui.Options) *dvui.BoxWidget {
+fn section(self: *Node, src: std.builtin.SourceLocation, name: []const u8, opts: dvui.Options) *dvui.BoxWidget {
     if (self.area_open) {
         dvui.log.err("dvui_node_graph: node {d} began a {s} inside its socket area; deinit the area first", .{ self.id, name });
     }
@@ -148,11 +150,11 @@ fn section(self: *ManagedNode, src: std.builtin.SourceLocation, name: []const u8
     return dvui.box(src, .{ .dir = .vertical }, defaults.override(opts));
 }
 
-pub fn data(self: *ManagedNode) *dvui.WidgetData {
+pub fn data(self: *Node) *dvui.WidgetData {
     return self.card.data();
 }
 
-fn processEvents(self: *ManagedNode) void {
+fn processEvents(self: *Node) void {
     if (!self.graph.interactive()) return;
     const wd = self.card.data();
     const graph = self.graph;
@@ -198,7 +200,7 @@ fn processEvents(self: *ManagedNode) void {
     }
 }
 
-pub fn deinit(self: *ManagedNode) void {
+pub fn deinit(self: *Node) void {
     defer if (dvui.widgetIsAllocated(self)) dvui.widgetFree(self);
     defer self.* = undefined;
 

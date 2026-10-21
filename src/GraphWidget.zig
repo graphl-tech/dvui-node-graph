@@ -2,7 +2,7 @@
 //! See README.md for usage
 //!
 //! Each node's position is passed in by pointer, and whether it is selected by
-//! `ManagedNode.InitOptions.selected`; selection changes arrive as events. The view transform
+//! `Node.InitOptions.selected`; selection changes arrive as events. The view transform
 //! persists in dvui's data store keyed by this widget's id unless the caller owns it
 //! (`InitOptions.view`).
 
@@ -12,8 +12,8 @@ const dvui = @import("dvui");
 
 const types = @import("types.zig");
 const draw = @import("draw.zig");
-const ManagedNode = @import("ManagedNode.zig");
-const ManagedSocket = @import("ManagedSocket.zig");
+const Node = @import("Node.zig");
+const SocketWidget = @import("SocketWidget.zig");
 const Style = @import("Style.zig");
 
 const NodeId = types.NodeId;
@@ -107,7 +107,7 @@ const NodeRecord = struct {
 
 const SocketEvent = struct {
     socket: SocketId,
-    event: ManagedSocket.Event,
+    event: SocketWidget.Event,
 };
 
 const Press = struct {
@@ -169,7 +169,7 @@ connected: std.ArrayList(SocketId) = .empty,
 /// A node drag that ended this frame; reported as `nodes_moved` once every node is declared.
 ended_drag: ?NodeDrag = null,
 events_list: std.ArrayList(Event) = .empty,
-/// Socket events for this frame, picked up by the matching `ManagedSocket`.
+/// Socket events for this frame, picked up by the matching `SocketWidget`.
 socket_events: std.ArrayList(SocketEvent) = .empty,
 /// Socket events produced after sockets rendered; delivered next frame.
 late_socket_events: std.ArrayList(SocketEvent) = .empty,
@@ -321,7 +321,7 @@ fn computeHover(self: *GraphWidget) void {
         }
     }
 
-    // The first node drawn renders on top (see `ManagedNode`), so the first hit wins.
+    // The first node drawn renders on top (see `Node`), so the first hit wins.
     for (self.prev_nodes) |n| {
         if (self.data_rs.rectToPhysical(n.rect).contains(mouse)) {
             self.hover_node = n.id;
@@ -426,7 +426,7 @@ fn resolvePreviewTarget(self: *GraphWidget, source: SocketId, p: Physical) ?Sock
     return best orelse self.state.preview_target;
 }
 
-fn queueSocketEvent(self: *GraphWidget, s: SocketId, e: ManagedSocket.Event) void {
+fn queueSocketEvent(self: *GraphWidget, s: SocketId, e: SocketWidget.Event) void {
     const list = if (self.sockets_done) &self.late_socket_events else &self.socket_events;
     list.append(arena(), .{ .socket = s, .event = e }) catch {};
 }
@@ -437,22 +437,18 @@ fn queueSocketEvent(self: *GraphWidget, s: SocketId, e: ManagedSocket.Event) voi
 
 /// Begin a node at `position` (graph space, written by drags). Draw its header, then its socket
 /// rows in `socketArea`; the caller must `deinit` it.
-pub fn node(self: *GraphWidget, src: std.builtin.SourceLocation, node_id: NodeId, position: *dvui.Point, init_opts: ManagedNode.InitOptions, opts: dvui.Options) *ManagedNode {
-    return ManagedNode.init(src, self, node_id, position, init_opts, opts);
+pub fn node(self: *GraphWidget, src: std.builtin.SourceLocation, node_id: NodeId, position: *dvui.Point, init_opts: Node.InitOptions, opts: dvui.Options) *Node {
+    return Node.init(src, self, node_id, position, init_opts, opts);
 }
 
 pub const ManagedNodeOptions = struct {
     title: ?[]const u8 = null,
-    node: ManagedNode.InitOptions = .{},
+    node: Node.InitOptions = .{},
 };
 
 /// Render a complete node with a named row for each field of the structs `Inputs` and `Outputs`.
-pub fn managedNode(self: *GraphWidget, src: std.builtin.SourceLocation, node_id: NodeId, position: *dvui.Point, comptime Inputs: type, comptime Outputs: type) void {
-    self.managedNodeEx(src, node_id, position, Inputs, Outputs, .{}, .{});
-}
-
-pub fn managedNodeEx(self: *GraphWidget, src: std.builtin.SourceLocation, node_id: NodeId, position: *dvui.Point, comptime Inputs: type, comptime Outputs: type, init_opts: ManagedNodeOptions, opts: dvui.Options) void {
-    var n = ManagedNode.init(src, self, node_id, position, init_opts.node, opts);
+pub fn managedNode(self: *GraphWidget, src: std.builtin.SourceLocation, node_id: NodeId, position: *dvui.Point, comptime Inputs: type, comptime Outputs: type, init_opts: ManagedNodeOptions, opts: dvui.Options) void {
+    var n = Node.init(src, self, node_id, position, init_opts.node, opts);
     defer n.deinit();
     if (init_opts.title) |t| dvui.labelEx(@src(), "{s}", .{t}, .{ .ellipsize = false }, .{ .padding = .all(2), .expand = .horizontal });
 
@@ -656,7 +652,7 @@ pub fn assertCanDeclare(self: *const GraphWidget) void {
 }
 
 // ---------------------------------------------------------------------------------------------
-// Interfaces used by ManagedNode / ManagedSocket
+// Interfaces used by Node / SocketWidget
 // ---------------------------------------------------------------------------------------------
 
 pub fn registerNode(self: *GraphWidget, node_id: NodeId, border_rect: dvui.Rect.Physical, selected: bool) void {
@@ -669,7 +665,7 @@ pub fn registerSocket(self: *GraphWidget, s: SocketId, center: Physical, radius:
 }
 
 /// Events queued for socket `s` this frame.
-pub fn takeSocketEvents(self: *GraphWidget, s: SocketId, out: *std.ArrayList(ManagedSocket.Event)) void {
+pub fn takeSocketEvents(self: *GraphWidget, s: SocketId, out: *std.ArrayList(SocketWidget.Event)) void {
     for (self.socket_events.items) |q| {
         if (q.socket.eql(s)) out.append(arena(), q.event) catch {};
     }

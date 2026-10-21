@@ -14,7 +14,7 @@ const Fixture = struct {
     view: ng.GraphWidget.View = .{},
     edges: std.ArrayList(ng.Edge) = .empty,
     events: std.ArrayList(ng.GraphWidget.Event) = .empty,
-    socket_events: std.ArrayList(struct { socket: ng.SocketId, event: ng.ManagedSocket.Event }) = .empty,
+    socket_events: std.ArrayList(struct { socket: ng.SocketId, event: ng.SocketWidget.Event }) = .empty,
     node1_pos: dvui.Point = .{ .x = 20, .y = 40 },
     node2_pos: dvui.Point = .{ .x = 260, .y = 140 },
     node3_pos: dvui.Point = .{ .x = 20, .y = 220 },
@@ -83,12 +83,12 @@ fn graphFrame() anyerror!dvui.App.Result {
         var area = node.socketArea(@src(), .{});
         defer area.deinit();
         area.managedInput(@src(), 0, "x", .{});
-        var row = ng.ManagedOutput.initEx(@src(), area, 0, .{ .socket_opts = .{ .tag = "out-1-0" } }, .{});
+        var row = ng.Output.initEx(@src(), area, 0, .{ .socket_opts = .{ .tag = "out-1-0" } }, .{});
         defer row.deinit();
         dvui.label(@src(), "s", .{}, .{});
     }
 
-    graph.managedNodeEx(@src(), 3, &fx.node3_pos, struct { a: bool, b: f32 }, struct { c: u8 }, .{
+    graph.managedNode(@src(), 3, &fx.node3_pos, struct { a: bool, b: f32 }, struct { c: u8 }, .{
         .title = "three",
         .node = .{ .selected = fx.isSelected(3) },
     }, .{ .tag = "node-3" });
@@ -101,7 +101,7 @@ fn graphFrame() anyerror!dvui.App.Result {
         defer area.deinit();
 
         {
-            var row = ng.ManagedInput.initEx(@src(), area, 0, .{ .socket_opts = .{ .tag = "in-2-0" } }, .{});
+            var row = ng.Input.initEx(@src(), area, 0, .{ .socket_opts = .{ .tag = "in-2-0" } }, .{});
             defer row.deinit();
             dvui.labelNoFmt(@src(), "s", .{}, .{});
 
@@ -110,7 +110,7 @@ fn graphFrame() anyerror!dvui.App.Result {
             };
         }
         {
-            var row = ng.ManagedOutput.initEx(@src(), area, 0, .{ .socket_opts = .{ .tag = "out-2-0" } }, .{});
+            var row = ng.Output.initEx(@src(), area, 0, .{ .socket_opts = .{ .tag = "out-2-0" } }, .{});
             defer row.deinit();
             dvui.label(@src(), "out", .{}, .{});
         }
@@ -380,7 +380,7 @@ fn readmeFrame() anyerror!dvui.App.Result {
     defer graph.deinit();
 
     // a title and a named row per field
-    graph.managedNodeEx(@src(), 1, &model.positions[0], struct { x: f32 }, struct { s: []const u8 }, .{ .title = "one" }, .{});
+    graph.managedNode(@src(), 1, &model.positions[0], struct { x: f32 }, struct { s: []const u8 }, .{ .title = "one" }, .{});
 
     // node that draws everything itself; its sockets are whatever rows it declares
     {
@@ -396,7 +396,7 @@ fn readmeFrame() anyerror!dvui.App.Result {
             var area = node.socketArea(@src(), .{});
             defer area.deinit();
             for (model.input_names, 0..) |name, i| {
-                var row = ng.ManagedInput.init(@src(), area, i, .{ .id_extra = i }); // socket .input(i)
+                var row = ng.Input.init(@src(), area, i, .{ .id_extra = i }); // socket .input(i)
                 defer row.deinit();
                 // anything drawn here is next to the socket
                 dvui.label(@src(), "{s}", .{name}, .{});
@@ -415,7 +415,7 @@ fn readmeFrame() anyerror!dvui.App.Result {
                     },
                 };
             }
-            area.managedOutput(@src(), 0, "out", .{}); // shorthand for a output with just a label
+            area.managedOutput(@src(), 0, "out", .{}); // shorthand for an output with just a label
         }
         {
             var footer = node.footer(@src(), .{});
@@ -457,8 +457,8 @@ const ReserveFixture = struct {
         defer graph.deinit();
         socket_capacity = graph.sockets.capacity;
         node_capacity = graph.nodes.capacity;
-        graph.managedNode(@src(), 1, &positions[0], struct { a: f32, b: f32 }, struct { c: f32 });
-        graph.managedNode(@src(), 2, &positions[1], struct { a: f32 }, struct {});
+        graph.managedNode(@src(), 1, &positions[0], struct { a: f32, b: f32 }, struct { c: f32 }, .{}, .{});
+        graph.managedNode(@src(), 2, &positions[1], struct { a: f32 }, struct {}, .{}, .{});
         return .ok;
     }
 };
@@ -486,7 +486,7 @@ const PlusFixture = struct {
             defer node.deinit();
             var area = node.socketArea(@src(), .{});
             defer area.deinit();
-            var row = ng.ManagedOutput.initEx(@src(), area, 0, .{ .socket_opts = .{ .tag = "pn-out" } }, .{});
+            var row = ng.Output.initEx(@src(), area, 0, .{ .socket_opts = .{ .tag = "pn-out" } }, .{});
             defer row.deinit();
             dvui.label(@src(), "out", .{}, .{});
         }
@@ -498,7 +498,7 @@ const PlusFixture = struct {
             area.managedInput(@src(), 0, "a", .{});
             // floats left of the card, not part of the layout
             const card = node.card.data().borderRectScale().r;
-            var plus = ng.ManagedSocket.init(@src(), graph, .input(2, 5), .{
+            var plus = ng.SocketWidget.init(@src(), graph, .input(2, 5), .{
                 .style = .{ .icon = .{ .name = "test_plus", .tvg = dvui.entypo.circle_with_plus } },
                 .edge_overlap = false,
             }, .{ .rect = area.column.data().contentRectScale().rectFromPhysical(.{ .x = card.x - 30, .y = card.y, .w = 20, .h = 20 }), .tag = "plus" });
@@ -585,8 +585,8 @@ fn styledFrame() anyerror!dvui.App.Result {
 
     var graph = ng.graph(@src(), .{ .style = style }, .{ .tag = "styled-graph" });
     defer graph.deinit();
-    graph.managedNodeEx(@src(), 1, &positions.p[0], struct { a: i32, b: i32 }, struct { sum: i32 }, .{ .title = "add" }, .{});
-    graph.managedNodeEx(@src(), 2, &positions.p[1], struct { a: i32, b: i32 }, struct { sum: i32 }, .{ .title = "add2" }, .{});
+    graph.managedNode(@src(), 1, &positions.p[0], struct { a: i32, b: i32 }, struct { sum: i32 }, .{ .title = "add" }, .{});
+    graph.managedNode(@src(), 2, &positions.p[1], struct { a: i32, b: i32 }, struct { sum: i32 }, .{ .title = "add2" }, .{});
     _ = graph.link(1, .output(0), 2, .input(0));
     return .ok;
 }

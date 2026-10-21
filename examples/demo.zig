@@ -192,7 +192,7 @@ fn drawGraph() !void {
 
             const ins = try inputsOf(n);
             for (ins.names, 0..) |name, i| {
-                var row = ng.ManagedInput.initEx(@src(), area, i, .{ .socket = .{ .style = ins.style(i) } }, .{ .id_extra = i });
+                var row = ng.Input.initEx(@src(), area, i, .{ .socket = .{ .style = ins.style(i) } }, .{ .id_extra = i });
                 defer row.deinit();
                 dvui.label(@src(), "{s}", .{name}, .{});
 
@@ -210,14 +210,14 @@ fn drawGraph() !void {
 
             switch (n.kind) {
                 .number => |*number| {
-                    var row = ng.ManagedOutput.init(@src(), area, 0, .{});
+                    var row = ng.Output.init(@src(), area, 0, .{});
                     defer row.deinit();
                     _ = dvui.textEntryNumber(@src(), f32, .{ .value = &number.value }, (dvui.Options{ .gravity_y = 0.5 }));
                 },
                 .add, .print => {
                     const outs = outputsOf(n.kind);
                     for (outs.names, 0..) |name, i| {
-                        var row = ng.ManagedOutput.initEx(@src(), area, i, .{ .socket = .{ .style = outs.style(i) } }, .{ .id_extra = i });
+                        var row = ng.Output.initEx(@src(), area, i, .{ .socket = .{ .style = outs.style(i) } }, .{ .id_extra = i });
                         defer row.deinit();
                         dvui.label(@src(), "{s}", .{name}, .{});
                     }

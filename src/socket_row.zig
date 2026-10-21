@@ -1,4 +1,4 @@
-//! `ManagedInput` / `ManagedOutput`: one row of a node's `SocketArea` holding a socket plus
+//! `Input` / `Output`: one row of a node's `SocketArea` holding a socket plus
 //! caller-supplied content (labels, literal editors, ...). Anything created between `init` and
 //! `deinit` lands in the row's content box, beside the socket.
 
@@ -6,12 +6,12 @@ const std = @import("std");
 const dvui = @import("dvui");
 
 const types = @import("types.zig");
-const ManagedNode = @import("ManagedNode.zig");
+const Node = @import("Node.zig");
 const SocketArea = @import("SocketArea.zig");
-const ManagedSocket = @import("ManagedSocket.zig");
+const SocketWidget = @import("SocketWidget.zig");
 
-pub const ManagedInput = SocketRow(.input);
-pub const ManagedOutput = SocketRow(.output);
+pub const Input = SocketRow(.input);
+pub const Output = SocketRow(.output);
 
 pub fn SocketRow(comptime side: types.Side) type {
     return struct {
@@ -19,16 +19,16 @@ pub fn SocketRow(comptime side: types.Side) type {
 
         pub const Event = union(enum) {
             /// Events from the row's socket.
-            socket: ManagedSocket.Event,
+            socket: SocketWidget.Event,
         };
 
         pub const InitOptions = struct {
-            socket: ManagedSocket.InitOptions = .{},
+            socket: SocketWidget.InitOptions = .{},
             /// dvui options for the socket widget (e.g. `.tag`).
             socket_opts: dvui.Options = .{},
         };
 
-        node: *ManagedNode,
+        node: *Node,
         /// The socket's index on its side: the row is socket `(side, index)` of its node.
         index: u31,
         row: dvui.BoxWidget = undefined,
@@ -52,7 +52,7 @@ pub fn SocketRow(comptime side: types.Side) type {
             const defaults: dvui.Options = .{ .expand = .horizontal, .gravity_x = gravity_x };
             self.row.init(src, .{ .dir = .horizontal }, defaults.override(opts));
 
-            var socket = ManagedSocket.init(@src(), node.graph, self.socketId(), init_opts.socket, init_opts.socket_opts);
+            var socket = SocketWidget.init(@src(), node.graph, self.socketId(), init_opts.socket, init_opts.socket_opts);
             const socket_events = socket.events();
             self.socket_hovered = socket.hovered();
             self.socket_rect = socket.rect();
@@ -88,6 +88,6 @@ pub fn SocketRow(comptime side: types.Side) type {
 }
 
 test {
-    std.testing.refAllDecls(ManagedInput);
-    std.testing.refAllDecls(ManagedOutput);
+    std.testing.refAllDecls(Input);
+    std.testing.refAllDecls(Output);
 }

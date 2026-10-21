@@ -91,8 +91,8 @@ pub const Icon = struct {
     tvg: []const u8,
 };
 
-/// Look and sizing of sockets. Override per socket with `Sockets.styles` or
-/// `ManagedSocket.InitOptions.style`. Size and proximity fields are read from the graph's style.
+/// Look and sizing of sockets. Override per socket with `SocketWidget.InitOptions.style` (a row's
+/// `.socket` option). Size and proximity fields are read from the graph's style.
 pub const Socket = struct {
     /// Graph units at full proximity scale.
     radius: f32 = 10,
