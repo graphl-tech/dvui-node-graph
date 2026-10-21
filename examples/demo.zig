@@ -1,8 +1,8 @@
 //! `zig build demo`
 //!
-//! Drag from a socket to wire it up, drop a wire on empty space to spawn a node, click an edge
+//! Drag from a socket to link it, drop the preview edge on empty space to spawn a node, click an edge
 //! to delete it, drag nodes (shift/ctrl-drag the canvas to box select), delete/backspace removes
-//! the selection, scroll to zoom, drag the canvas to pan. "add" takes any number of inputs: wire
+//! the selection, scroll to zoom, drag the canvas to pan. "add" takes any number of inputs: link
 //! into (or click) its "+" to add one.
 
 const std = @import("std");
@@ -25,21 +25,23 @@ pub const std_options: std.Options = .{ .logFn = dvui.App.logFn };
 
 const gpa = std.heap.smp_allocator;
 
-const Kind = enum { number, add, print };
+const Kind = union(enum) {
+    number: struct { value: f32 = 0 },
+    /// `arity` is its number of inputs.
+    add: struct { arity: u31 = 2 },
+    print,
+};
 
 pub const Node = struct {
     id: ng.NodeId,
     kind: Kind,
-    value: f32 = 0,
-    /// Number of inputs of an `add` node.
-    arity: u31 = 2,
     position: dvui.Point,
+    selected: bool = false,
 };
 
 pub var nodes: std.ArrayList(Node) = .empty;
 pub var edges: std.ArrayList(ng.Edge) = .empty;
 var next_id: ng.NodeId = 1;
-var use_declarative = false;
 
 fn addNode(kind: Kind, p: dvui.Point) !ng.NodeId {
     const id = next_id;
@@ -50,12 +52,10 @@ fn addNode(kind: Kind, p: dvui.Point) !ng.NodeId {
 
 pub fn init(win: *dvui.Window) !void {
     _ = win;
-    const a = try addNode(.number, .{ .x = 40, .y = 60 });
-    const b = try addNode(.number, .{ .x = 40, .y = 220 });
-    const c = try addNode(.add, .{ .x = 320, .y = 120 });
+    const a = try addNode(.{ .number = .{ .value = 2 } }, .{ .x = 40, .y = 60 });
+    const b = try addNode(.{ .number = .{ .value = 3 } }, .{ .x = 40, .y = 220 });
+    const c = try addNode(.{ .add = .{} }, .{ .x = 320, .y = 120 });
     const d = try addNode(.print, .{ .x = 580, .y = 140 });
-    nodes.items[0].value = 2;
-    nodes.items[1].value = 3;
     try edges.append(gpa, .{ .source = .output(a, 0), .target = .input(c, 0) });
     try edges.append(gpa, .{ .source = .output(b, 0), .target = .input(c, 1) });
     try edges.append(gpa, .{ .source = .output(c, 0), .target = .input(d, 1) });
@@ -81,12 +81,23 @@ const plus_socket: ng.Style.Socket = .{
 
 const letters = [_][]const u8{ "a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m", "n", "o", "p", "q", "r", "s", "t", "u", "v", "w", "x", "y", "z" };
 
-fn inputsOf(n: *const Node) !ng.Sockets {
+/// One side's socket rows, in socket order.
+const Rows = struct {
+    names: []const []const u8 = &.{},
+    /// Shorter than `names` to use the graph's style for the rest.
+    styles: []const ?ng.Style.Socket = &.{},
+
+    fn style(self: Rows, i: usize) ?ng.Style.Socket {
+        return if (i < self.styles.len) self.styles[i] else null;
+    }
+};
+
+fn inputsOf(n: *const Node) !Rows {
     return switch (n.kind) {
-        .number => .none(.input),
-        .add => blk: {
+        .number => .{},
+        .add => |add| blk: {
             const arena = dvui.currentWindow().arena();
-            const count = @min(n.arity, letters.len);
+            const count = @min(add.arity, letters.len);
             const names = try arena.alloc([]const u8, count + 1);
             const styles = try arena.alloc(?ng.Style.Socket, count + 1);
             for (names[0..count], styles[0..count], letters[0..count]) |*name, *st, l| {
@@ -95,9 +106,9 @@ fn inputsOf(n: *const Node) !ng.Sockets {
             }
             names[count] = "";
             styles[count] = plus_socket;
-            break :blk .{ .side = .input, .names = names, .styles = styles };
+            break :blk .{ .names = names, .styles = styles };
         },
-        .print => .{ .side = .input, .names = &.{ "exec", "value" }, .styles = &.{flow_socket} },
+        .print => .{ .names = &.{ "exec", "value" }, .styles = &.{flow_socket} },
     };
 }
 
@@ -106,11 +117,16 @@ fn nodeById(id: ng.NodeId) ?*Node {
     return null;
 }
 
-/// If necessary, grow an `add` node so that its input `index` exists.
+/// Grow an `add` node so that its input `index` exists.
 fn ensureInput(s: ng.SocketId) void {
     if (s.side() != .input) return;
     const n = nodeById(s.node) orelse return;
-    if (n.kind == .add and s.socket.index >= n.arity) n.arity = @min(s.socket.index + 1, letters.len);
+    switch (n.kind) {
+        .add => |*add| if (s.socket.index >= add.arity) {
+            add.arity = @min(s.socket.index + 1, letters.len);
+        },
+        else => {},
+    }
 }
 
 fn addEdge(edge: ng.Edge) !void {
@@ -121,10 +137,10 @@ fn addEdge(edge: ng.Edge) !void {
     if (!hasEdge(edge)) try edges.append(gpa, edge);
 }
 
-fn outputsOf(kind: Kind) ng.Sockets {
+fn outputsOf(kind: Kind) Rows {
     return switch (kind) {
-        .number, .add => comptime ng.socketsOfType(struct { value: f32 }, .output),
-        .print => .{ .side = .output, .names = &.{"then"}, .styles = &.{flow_socket} },
+        .number, .add => .{ .names = &.{"value"} },
+        .print => .{ .names = &.{"then"}, .styles = &.{flow_socket} },
     };
 }
 
@@ -150,52 +166,116 @@ pub fn frame() !dvui.App.Result {
         var bar = dvui.box(@src(), .{ .dir = .horizontal }, .{ .expand = .horizontal, .padding = .all(4) });
         defer bar.deinit();
         dvui.label(@src(), "{d} nodes, {d} edges", .{ nodes.items.len, edges.items.len }, .{ .gravity_y = 0.5 });
-        _ = dvui.checkbox(@src(), &use_declarative, "declarative API", .{ .gravity_x = 1.0 });
     }
 
-    if (use_declarative) try declarativeGraph() else try imperativeGraph();
+    try drawGraph();
     return .ok;
 }
 
-fn imperativeGraph() !void {
+fn drawGraph() !void {
     var graph = ng.graph(@src(), .{}, .{ .margin = .all(8), .tag = "demo-graph" });
     defer graph.deinit();
 
     for (nodes.items) |*n| {
-        var node = graph.node(@src(), n.id, &n.position, try inputsOf(n), outputsOf(n.kind), .{
-            .title = @tagName(n.kind),
-        }, .{});
+        var node = graph.node(@src(), n.id, &n.position, .{ .selected = n.selected }, .{});
         defer node.deinit();
 
-        for (0..node.inputs.len()) |i| {
-            var row = ng.BaseInput.init(@src(), node, i, .{ .id_extra = i });
-            defer row.deinit();
-            dvui.label(@src(), "{s}", .{row.name()}, .{});
-
-            for (row.events()) |e| switch (e) {
-                .socket => |se| switch (se) {
-                    // clicking a connected input disconnects it
-                    .mouse => |me| switch (me) {
-                        .click => removeEdgesAt(row.socketId()),
-                        else => {},
-                    },
-                    else => {},
-                },
-            };
+        {
+            var header = node.header(@src(), .{});
+            defer header.deinit();
+            dvui.label(@src(), "{s}", .{@tagName(n.kind)}, .{});
         }
 
-        if (n.kind == .number) {
-            var row = ng.BaseOutput.init(@src(), node, 0, .{});
-            defer row.deinit();
-            _ = dvui.textEntryNumber(@src(), f32, .{ .value = &n.value }, (dvui.Options{ .gravity_y = 0.5 }));
-        } else {
-            for (0..node.outputs.len()) |i| node.baseOutput(@src(), i, .{ .id_extra = i });
+        {
+            var area = node.socketArea(@src(), .{});
+            defer area.deinit();
+
+            const ins = try inputsOf(n);
+            for (ins.names, 0..) |name, i| {
+                var row = ng.Input.initEx(@src(), area, i, .{ .socket = .{ .style = ins.style(i) } }, .{ .id_extra = i });
+                defer row.deinit();
+                dvui.label(@src(), "{s}", .{name}, .{});
+
+                for (row.events()) |e| switch (e) {
+                    .socket => |se| switch (se) {
+                        // clicking a connected input disconnects it
+                        .mouse => |me| switch (me) {
+                            .click => removeEdgesAt(row.socketId()),
+                            else => {},
+                        },
+                        else => {},
+                    },
+                };
+            }
+
+            switch (n.kind) {
+                .number => |*number| {
+                    var row = ng.Output.init(@src(), area, 0, .{});
+                    defer row.deinit();
+                    _ = dvui.textEntryNumber(@src(), f32, .{ .value = &number.value }, (dvui.Options{ .gravity_y = 0.5 }));
+                },
+                .add, .print => {
+                    const outs = outputsOf(n.kind);
+                    for (outs.names, 0..) |name, i| {
+                        var row = ng.Output.initEx(@src(), area, i, .{ .socket = .{ .style = outs.style(i) } }, .{ .id_extra = i });
+                        defer row.deinit();
+                        dvui.label(@src(), "{s}", .{name}, .{});
+                    }
+                },
+            }
+        }
+        {
+            var footer = node.footer(@src(), .{});
+            defer footer.deinit();
+            dvui.label(@src(), "FOOTER", .{}, .{});
         }
     }
 
     for (edges.items) |e| _ = graph.link(e.source.node, e.source.socket, e.target.node, e.target.socket);
 
-    for (graph.events()) |e| try handleEvent(graph, e);
+    for (graph.events()) |e| {
+        switch (e) {
+            .edge_created => |edge| try addEdge(edge),
+            .socket_clicked => |s| ensureInput(s),
+            .edge_clicked => |edge| for (edges.items, 0..) |x, i| if (x.eql(edge)) {
+                _ = edges.orderedRemove(i);
+                break;
+            },
+            .preview_edge_dropped => |drop| {
+                const id = try addNode(.{ .add = .{} }, drop.point);
+                try addEdge(ng.Edge.normalized(drop.source, if (drop.source.side() == .output) .input(id, 0) else .output(id, 0)));
+            },
+            .select => |sel| for (nodes.items) |*n| switch (sel.mode) {
+                .replace => n.selected = n.id == sel.node,
+                .add => if (n.id == sel.node) {
+                    n.selected = true;
+                },
+                .remove => if (n.id == sel.node) {
+                    n.selected = false;
+                },
+            },
+            .select_all => for (nodes.items) |*n| {
+                n.selected = true;
+            },
+            .deselect_all => for (nodes.items) |*n| {
+                n.selected = false;
+            },
+            .box_select => |b| for (nodes.items) |*n| {
+                if (std.mem.indexOfScalar(ng.NodeId, b.nodes, n.id) != null) n.selected = b.mode == .include;
+            },
+            .delete_selection => {
+                var i = nodes.items.len;
+                while (i > 0) {
+                    i -= 1;
+                    if (nodes.items[i].selected) removeNode(nodes.items[i].id);
+                }
+            },
+            .context_menu => |cm| if (cm.target == .canvas) {
+                _ = try addNode(.{ .number = .{} }, cm.point);
+            },
+            else => {},
+        }
+    }
 }
 
 fn removeEdgesAt(s: ng.SocketId) void {
@@ -204,50 +284,4 @@ fn removeEdgesAt(s: ng.SocketId) void {
         const e = edges.items[i];
         if (e.source.eql(s) or e.target.eql(s)) _ = edges.orderedRemove(i) else i += 1;
     }
-}
-
-fn handleEvent(graph: ?*ng.GraphWidget, e: ng.GraphWidget.Event) !void {
-    switch (e) {
-        .link_created => |edge| try addEdge(edge),
-        .socket_clicked => |s| ensureInput(s),
-        .link_clicked => |edge| for (edges.items, 0..) |x, i| if (x.eql(edge)) {
-            _ = edges.orderedRemove(i);
-            break;
-        },
-        .link_dropped => |drop| {
-            const id = try addNode(.add, drop.point);
-            try addEdge(ng.Edge.normalized(drop.source, if (drop.source.side() == .output) .input(id, 0) else .output(id, 0)));
-        },
-        .delete_selection => if (graph) |g| {
-            for (g.selectedNodes()) |id| removeNode(id);
-            g.clearSelection();
-        },
-        .context_menu => |cm| if (cm.target == .canvas) {
-            _ = try addNode(.number, cm.point);
-        },
-        else => {},
-    }
-}
-
-const Ctx = struct {
-    fn onEvent(_: Ctx, e: ng.GraphWidget.Event) void {
-        handleEvent(null, e) catch {};
-    }
-};
-
-fn declarativeGraph() !void {
-    const arena = dvui.currentWindow().arena();
-    const decl_nodes = try arena.alloc(ng.declarative.Node, nodes.items.len);
-    for (nodes.items, decl_nodes) |*n, *d| d.* = .{
-        .id = n.id,
-        .title = @tagName(n.kind),
-        .inputs = try inputsOf(n),
-        .outputs = outputsOf(n.kind),
-        .position = n.position,
-    };
-    _ = ng.declarative.graph(@src(), Ctx{}, .{
-        .nodes = decl_nodes,
-        .edges = edges.items,
-        .on_event = Ctx.onEvent,
-    }, .{ .margin = .all(8) });
 }

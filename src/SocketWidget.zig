@@ -1,9 +1,9 @@
-//! A connection pin. Draws an icon, grows as the mouse approaches, and starts wire drags.
+//! A connection socket. Draws an icon, grows as the mouse approaches, and starts preview edges.
 //!
-//! Lay it out in a row (usually through `BaseInput`/`BaseOutput`) or place it anywhere with
+//! Lay it out in a row (usually through `Input`/`Output`) or place it anywhere with
 //! `.rect` in its dvui options. A socket doesn't have to exist in your model: a "+" that adds an
 //! input is just a socket with a plus icon whose id is the input you would add; handle
-//! `link_created`/`socket_clicked` for it by creating that input.
+//! `edge_created`/`socket_clicked` for it by creating that input.
 //!
 //! Events are known by the end of `init`, so `events()` is valid right after it.
 
@@ -17,7 +17,7 @@ const GraphWidget = @import("GraphWidget.zig");
 
 const SocketId = types.SocketId;
 
-const BaseSocket = @This();
+const SocketWidget = @This();
 
 pub const InitOptions = struct {
     /// Overrides the graph's `style.socket` icons for this socket.
@@ -39,24 +39,24 @@ pub const Click = struct {
 };
 
 pub const MouseEvent = union(enum) {
-    /// Pointer pressed on the socket (a wire drag may follow).
+    /// Pointer pressed on the socket (a preview edge may follow).
     press: Click,
-    /// Pressed and released without dragging a wire.
+    /// Pressed and released without dragging a preview edge.
     click: Click,
 };
 
-pub const WireEvent = union(enum) {
-    /// The user started dragging a wire out of this socket.
+pub const PreviewEdgeEvent = union(enum) {
+    /// The user started dragging a preview edge out of this socket.
     start,
-    /// The wire from this socket was released on a socket it can connect to.
+    /// The preview edge from this socket was released on a socket it can connect to.
     connect: SocketId,
-    /// The wire from this socket was released over nothing it can connect to. Graph-space point.
+    /// The preview edge from this socket was released over nothing it can connect to. Graph-space point.
     drop: dvui.Point,
 };
 
 pub const Event = union(enum) {
     mouse: MouseEvent,
-    wire: WireEvent,
+    preview_edge: PreviewEdgeEvent,
 };
 
 wd: dvui.WidgetData,
@@ -65,17 +65,17 @@ socket: SocketId,
 init_opts: InitOptions,
 events_list: std.ArrayList(Event) = .empty,
 hover: bool = false,
-/// True while a wire being dragged from elsewhere would connect here.
-wire_target: bool = false,
+/// True while a preview edge dragged from elsewhere would connect here.
+preview_target: bool = false,
 
-pub fn init(src: std.builtin.SourceLocation, graph: *GraphWidget, socket: SocketId, init_opts: InitOptions, opts: dvui.Options) *BaseSocket {
-    const self = dvui.widgetAlloc(BaseSocket);
+pub fn init(src: std.builtin.SourceLocation, graph: *GraphWidget, socket: SocketId, init_opts: InitOptions, opts: dvui.Options) *SocketWidget {
+    const self = dvui.widgetAlloc(SocketWidget);
     self.initInPlace(src, graph, socket, init_opts, opts);
     return self;
 }
 
 /// It's expected to call this when `self` is `undefined`.
-pub fn initInPlace(self: *BaseSocket, src: std.builtin.SourceLocation, graph: *GraphWidget, socket: SocketId, init_opts: InitOptions, opts: dvui.Options) void {
+pub fn initInPlace(self: *SocketWidget, src: std.builtin.SourceLocation, graph: *GraphWidget, socket: SocketId, init_opts: InitOptions, opts: dvui.Options) void {
     const r = graph.style().socket.radius;
     const pull = r + graph.style().node.padding;
     const defaults: dvui.Options = .{
@@ -105,10 +105,10 @@ pub fn initInPlace(self: *BaseSocket, src: std.builtin.SourceLocation, graph: *G
     const border = self.wd.borderRectScale().r;
     const center = draw.rectCenter(border);
     const radius = @min(border.w, border.h) * 0.5;
-    if (graph.wireSource()) |w| {
-        if (graph.canLink(w, socket) and dvui.currentWindow().mouse_pt.diff(center).length() <= radius) {
-            self.wire_target = true;
-            graph.setWireTarget(socket);
+    if (graph.previewEdgeSource()) |source| {
+        if (graph.canLink(source, socket) and dvui.currentWindow().mouse_pt.diff(center).length() <= radius) {
+            self.preview_target = true;
+            graph.setPreviewTarget(socket);
             dvui.cursorSet(.crosshair);
         }
     }
@@ -116,28 +116,28 @@ pub fn initInPlace(self: *BaseSocket, src: std.builtin.SourceLocation, graph: *G
     self.drawSocket(border);
 }
 
-pub fn data(self: *BaseSocket) *dvui.WidgetData {
+pub fn data(self: *SocketWidget) *dvui.WidgetData {
     return self.wd.validate();
 }
 
-pub fn events(self: *const BaseSocket) []const Event {
+pub fn events(self: *const SocketWidget) []const Event {
     return self.events_list.items;
 }
 
-pub fn hovered(self: *const BaseSocket) bool {
-    return self.hover or self.wire_target;
+pub fn hovered(self: *const SocketWidget) bool {
+    return self.hover or self.preview_target;
 }
 
 /// Physical border rect of the socket (full size, independent of proximity scale).
-pub fn rect(self: *BaseSocket) dvui.Rect.Physical {
+pub fn rect(self: *SocketWidget) dvui.Rect.Physical {
     return self.data().borderRectScale().r;
 }
 
-pub fn matchEvent(self: *BaseSocket, e: *dvui.Event) bool {
+pub fn matchEvent(self: *SocketWidget, e: *dvui.Event) bool {
     return dvui.eventMatchSimple(e, self.data());
 }
 
-fn processEvents(self: *BaseSocket) void {
+fn processEvents(self: *SocketWidget) void {
     const wd = self.data();
     for (dvui.events()) |*e| {
         if (!self.matchEvent(e) or e.evt != .mouse) continue;
@@ -164,7 +164,7 @@ fn processEvents(self: *BaseSocket) void {
     }
 }
 
-fn drawSocket(self: *BaseSocket, slot: dvui.Rect.Physical) void {
+fn drawSocket(self: *SocketWidget, slot: dvui.Rect.Physical) void {
     const ss = self.init_opts.style orelse self.graph.style().socket;
     const connected = self.init_opts.connected orelse self.graph.isConnected(self.socket);
     const selected = if (self.graph.selectedSocket()) |sel| sel.eql(self.socket) else false;
@@ -192,7 +192,7 @@ fn drawSocket(self: *BaseSocket, slot: dvui.Rect.Physical) void {
     }
 }
 
-pub fn deinit(self: *BaseSocket) void {
+pub fn deinit(self: *SocketWidget) void {
     defer if (dvui.widgetIsAllocated(self)) dvui.widgetFree(self);
     defer self.* = undefined;
     self.data().minSizeSetAndRefresh();

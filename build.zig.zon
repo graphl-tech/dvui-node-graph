@@ -5,8 +5,8 @@
     .fingerprint = 0x73e942e36786e6c,
     .dependencies = .{
         .dvui = .{
-            .url = "git+https://github.com/david-vanderson/dvui#5903456e099e746849b7304b0ef15ec0eeafa7aa",
-            .hash = "dvui-0.6.0-dev-AQFJmdZEBAFhXY4GyApa8_JVK_lcmUxwUCbTQPceLHjj",
+            .url = "git+https://github.com/david-vanderson/dvui#1c37be6dfc2ec6310c5298ecbdd38ee16b368371",
+            .hash = "dvui-0.6.0-dev-AQFJmXpEBAGbcPf_m6RSUd1Qfwm40MYXT4qPTVcDf5B2",
             // only for the demo and tests; consumers bring their own dvui
             .lazy = true,
         },

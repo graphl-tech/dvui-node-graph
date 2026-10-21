@@ -1,10 +1,9 @@
 //! Node graph widgets for dvui.
 //!
-//! Imperative API: `GraphWidget` (canvas), `BaseNode` (card), `BaseInput`/`BaseOutput` (socket
-//! rows), `BaseSocket` (pin). Higher-level widgets surface the events of the widgets they wrap
-//! through nested event unions, e.g. `BaseInput.Event.socket` carries `BaseSocket.Event`.
-//!
-//! Declarative API: `declarative.graph`, built entirely on the imperative one.
+//! Widgets: `GraphWidget` (canvas), `Node` (card), `SocketArea` (the node's socket
+//! columns), `Input`/`Output` (socket rows), `SocketWidget` (the socket itself).
+//! Higher-level widgets surface the events of the widgets they wrap through nested event unions,
+//! e.g. `Input.Event.socket` carries `SocketWidget.Event`.
 
 const std = @import("std");
 const dvui = @import("dvui");
@@ -15,19 +14,17 @@ pub const Side = types.Side;
 pub const Socket = types.Socket;
 pub const SocketId = types.SocketId;
 pub const Edge = types.Edge;
-pub const Sockets = types.Sockets;
-pub const socketsOfType = types.socketsOfType;
 
 pub const Style = @import("Style.zig");
 pub const GraphWidget = @import("GraphWidget.zig");
-pub const BaseNode = @import("BaseNode.zig");
-pub const BaseSocket = @import("BaseSocket.zig");
+pub const Node = @import("Node.zig");
+pub const SocketArea = @import("SocketArea.zig");
+pub const SocketWidget = @import("SocketWidget.zig");
 const socket_row = @import("socket_row.zig");
 pub const SocketRow = socket_row.SocketRow;
-pub const BaseInput = socket_row.BaseInput;
-pub const BaseOutput = socket_row.BaseOutput;
+pub const Input = socket_row.Input;
+pub const Output = socket_row.Output;
 
-pub const declarative = @import("declarative.zig");
 pub const draw = @import("draw.zig");
 
 /// Begin a graph canvas. See `GraphWidget`.

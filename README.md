@@ -1,9 +1,24 @@
 # dvui-node-graph
 
 Node graph editor widgets for [dvui](https://github.com/david-vanderson/dvui)
-Has both an imperative and a declarative API.
+Developed for [graphl](https://graphl.tech/demo).
 
-Built for zig 0.17. The `dvui_node_graph` module brings no dvui of its own; give it yours:
+This branch is for zig 0.17
+
+> [!WARNING]
+> Generative AI was used to edit and/or produce large portions of this code.
+> Every source code line was verified by a human.
+
+## Using in your project
+
+Add this project as a dependency:
+
+```sh
+zig fetch --save=dvui_node_graph 'git+https://github.com/graphl-tech/dvui-node-graph#zig-0.17.0'
+```
+
+To use `dvui_node_graph`, you must provide your dvui import. Ensure it is compatible with
+the DVUI version that we test under:
 
 ```zig
 const ng_mod = b.dependency("dvui_node_graph", .{}).module("dvui_node_graph");
@@ -11,18 +26,22 @@ const ng_mod = b.dependency("dvui_node_graph", .{}).module("dvui_node_graph");
 ng_mod.addImport("dvui", dvui_module);
 ```
 
-```sh
-zig build demo          # interactive SDL3 demo
-zig build test          # unit tests + headless interaction tests
-zig build test-images   # same tests on SDL3, writes PNGs to snapshots/images
-```
+## Features
 
-## Imperative API
+- zoomable, pannable graph with grid
+- imperative API with managed and unmanaged widgets for your chosen level of flexibility
+- DVUI-like high-level graph event API
+- imperative selection management
+- positive and negative box select
+
+## Example
 
 ```zig
 const ng = @import("dvui_node_graph");
 
 var positions = [_]dvui.Point{ .{ .x = 20, .y = 40 }, .{ .x = 260, .y = 140 } };
+// can change from frame to frame
+var input_names: []const []const u8 = &.{ "a", "b" };
 
 // start from the default style and override what you need
 var style = ng.Style.default;
@@ -32,44 +51,61 @@ style.node.corner_radius = 4;
 var graph = ng.graph(@src(), .{ .style = style }, .{});
 defer graph.deinit();
 
-// a default node
-graph.baseNode(@src(), 1, &positions[0], struct { x: i32 }, struct { s: []const u8 });
+// a title and a named row per field
+graph.managedNode(@src(), 1, &positions[0], struct { x: f32 }, struct { s: []const u8 }, .{ .title = "one" }, .{});
 
+// node that draws everything itself; its sockets are whatever rows it declares
 {
-    var node = graph.node(@src(), 2, &positions[1], struct { s: []const u8 }, struct {}, .{ .title = "two" }, .{});
+    var node = graph.node(@src(), 2, &positions[1], .{}, .{});
     defer node.deinit();
-
-    for (0..node.inputs.len()) |i| {
-        var row = ng.BaseInput.init(@src(), node, i, .{ .id_extra = i });
-        defer row.deinit();
-        // anything drawn here lands next to the socket
-        dvui.label(@src(), "{s}", .{row.name()}, .{});
-
-        for (row.events()) |e| switch (e) {
-            .socket => |se| switch (se) {
-                .mouse => |me| switch (me) {
-                    .click => |click| std.log.info("clicked at {any}", .{click.p}),
-                    .press => {},
-                },
-                .wire => |we| switch (we) {
-                    .start => {},
-                    .connect => |other| std.log.info("wired to {any}", .{other}),
-                    .drop => |graph_point| std.log.info("dropped at {any}", .{graph_point}),
-                },
-            },
-        };
+    {
+        var header = node.header(@src(), .{});
+        defer header.deinit();
+        dvui.label(@src(), "two", .{}, .{});
     }
-    for (0..node.outputs.len()) |i| node.baseOutput(@src(), i, .{ .id_extra = i });
+
+    {
+        var area = node.socketArea(@src(), .{});
+        defer area.deinit();
+        for (input_names, 0..) |name, i| {
+            var row = ng.Input.init(@src(), area, i, .{ .id_extra = i }); // socket .input(i)
+            defer row.deinit();
+            // anything drawn here is next to the socket
+            dvui.label(@src(), "{s}", .{name}, .{});
+
+            for (row.events()) |e| switch (e) {
+                .socket => |se| switch (se) {
+                    .mouse => |me| switch (me) {
+                        .click => |click| std.log.info("clicked at {any}", .{click.p}),
+                        .press => {},
+                    },
+                    .preview_edge => |pe| switch (pe) {
+                        .start => {},
+                        .connect => |other| std.log.info("linked to {any}", .{other}),
+                        .drop => |graph_point| std.log.info("dropped at {any}", .{graph_point}),
+                    },
+                },
+            };
+        }
+        area.managedOutput(@src(), 0, "out", .{}); // shorthand for an output with just a label
+    }
+    {
+        var footer = node.footer(@src(), .{});
+        defer footer.deinit();
+        dvui.label(@src(), "below the sockets", .{}, .{});
+    }
 }
 
 // edges go after the nodes that own their sockets
 _ = graph.link(1, .output(0), 2, .input(0)); // node 1's first output -> node 2's first input
 
 for (graph.events()) |e| switch (e) {
-    .link_created => {}, // wire released on a compatible socket (opposite sides: output -> input)
-    .link_dropped => {}, // wire released on empty canvas, `.point` is graph space
-    .link_clicked => {},
+    .edge_created => {}, // preview edge released on a compatible socket (opposite sides: output -> input)
+    .preview_edge_dropped => {}, // preview edge released on empty canvas, `.point` is graph space
+    .edge_clicked => {},
     .nodes_moved => {}, // `.nodes` moved by `.delta`
+    // the selection is yours: update it here and pass each node `.selected`
+    .select, .select_all, .deselect_all, .box_select => {},
     .delete_selection => {},
     .context_menu => {}, // right click on canvas/node/socket
     else => {},
@@ -77,21 +113,13 @@ for (graph.events()) |e| switch (e) {
 ```
 
 Higher level widgets expose the events of the widget it wraps through a variant of
-its own event union. e.g. `BaseInput.Event.socket` carries a `BaseSocket.Event`, which splits into
-`.mouse` and `.wire`. `BaseSocket` can also be used directly.
+its own event union. e.g. `Input.Event.socket` carries a `SocketWidget.Event`, which splits into
+`.mouse` and `.preview_edge`. `SocketWidget` can also be used directly.
 
-## Declarative API
+## Development
 
-```zig
-const Add = ng.declarative.NodeType(struct { a: i32, b: i32 }, struct { sum: i32 });
-
-const events = ng.declarative.graph(@src(), &app, .{
-    .nodes = &.{ Add.nodeAt(1, "add", .{ .x = 20, .y = 20 }), Add.node(2, "add") },
-    .edges = &.{.{ .source = .output(1, 0), .target = .input(2, 0) }},
-    .draw_input_label = App.drawInputLabel, // fn (*App, *ng.BaseInput, ng.declarative.Node) void
-    .on_click_socket = App.onClickSocket, // fn (*App, ng.SocketId, ng.BaseSocket.Click) void
-    .on_event = App.onEvent, // fn (*App, ng.GraphWidget.Event) void
-}, .{});
+```sh
+zig build demo          # interactive SDL3 demo (./examples/demo.zig)
+zig build test          # tests
+zig build test-images   # tests but writes snapshot PNGs to snapshots/images
 ```
-
-The first argument after `@src()` is a context passed to every callback, and it can be any type.

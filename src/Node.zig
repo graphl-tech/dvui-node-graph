@@ -1,6 +1,8 @@
-//! A draggable, selectable node. Lay out its sockets with `BaseInput`/`BaseOutput` (or call
-//! `defaultSockets`). Inputs stack in a left column and outputs in a right column; declare all
-//! inputs before any outputs.
+//! A draggable, selectable node card. Everything is drawn by the caller, top to bottom: a
+//! `header` (e.g. a title label), then the socket rows inside `socketArea`, then any `footer`
+//! sections.
+//!
+//! For a node drawn for you from struct types, see `GraphWidget.managedNode`.
 
 const std = @import("std");
 const dvui = @import("dvui");
@@ -10,39 +12,39 @@ const GraphWidget = @import("GraphWidget.zig");
 const draw = @import("draw.zig");
 const drag = @import("drag.zig");
 const Style = @import("Style.zig");
-const socket_row = @import("socket_row.zig");
+const SocketArea = @import("SocketArea.zig");
 
 const NodeId = types.NodeId;
-const Sockets = types.Sockets;
 
-const BaseNode = @This();
+const Node = @This();
 
 pub const InitOptions = struct {
-    title: ?[]const u8 = null,
+    /// The app's selection state for this node. Changes arrive as `GraphWidget.Event`s
+    /// (`select`, `select_all`, `deselect_all`, `box_select`).
+    selected: bool = false,
     draggable: bool = true,
     selectable: bool = true,
     /// Overrides the graph's `style.node` for this node.
     style: ?Style.Node = null,
-    /// Apply this frame's drag delta to the position. Turn off to apply moves yourself from
-    /// `GraphWidget.node_drag_delta` (e.g. to route them through an undo system).
+    /// Apply this frame's drag delta to the position if this node is selected or the drag started
+    /// on it. Turn off to apply moves yourself from `GraphWidget.node_drag_delta` (e.g. to route
+    /// them through an undo system).
     apply_drag: bool = true,
 };
 
 graph: *GraphWidget,
 id: NodeId,
-inputs: Sockets,
-outputs: Sockets,
 init_opts: InitOptions,
 position: *dvui.Point,
+/// `init_opts.selected`, or what an in-progress box select will make it.
 selected: bool,
 /// Mouse was over this (topmost) node last frame.
 hovered: bool,
 
 front_to_back: dvui.RenderFrontToBack = undefined,
 card: dvui.BoxWidget = undefined,
-body: dvui.BoxWidget = undefined,
-column: dvui.BoxWidget = undefined,
-column_side: ?types.Side = null,
+/// A `socketArea` has begun and not been deinit yet.
+area_open: bool = false,
 
 pub fn init(
     src: std.builtin.SourceLocation,
@@ -51,25 +53,21 @@ pub fn init(
     /// `position` is the node's top-left corner in graph space, provided by caller,
     /// and we might write through it
     position: *dvui.Point,
-    inputs: anytype,
-    outputs: anytype,
     init_opts: InitOptions,
     opts: dvui.Options,
-) *BaseNode {
-    const self = dvui.widgetAlloc(BaseNode);
-    self.initInPlace(src, graph, id, position, types.sockets(.input, inputs), types.sockets(.output, outputs), init_opts, opts);
+) *Node {
+    const self = dvui.widgetAlloc(Node);
+    self.initInPlace(src, graph, id, position, init_opts, opts);
     return self;
 }
 
 /// It's expected to call this when `self` is `undefined`.
 pub fn initInPlace(
-    self: *BaseNode,
+    self: *Node,
     src: std.builtin.SourceLocation,
     graph: *GraphWidget,
     id: NodeId,
     position: *dvui.Point,
-    inputs: Sockets,
-    outputs: Sockets,
     init_opts: InitOptions,
     opts: dvui.Options,
 ) void {
@@ -77,15 +75,14 @@ pub fn initInPlace(
     self.* = .{
         .graph = graph,
         .id = id,
-        .inputs = inputs,
-        .outputs = outputs,
         .init_opts = init_opts,
         .position = position,
-        .selected = graph.isSelected(id),
+        .selected = if (graph.inBoxSelect(id)) |m| m == .include else init_opts.selected,
         .hovered = if (graph.hover_node) |h| h == id else false,
     };
 
-    if (self.selected and init_opts.draggable and init_opts.apply_drag) {
+    const drag_origin = if (graph.draggedNode()) |d| d == id else false;
+    if ((init_opts.selected or drag_origin) and init_opts.draggable and init_opts.apply_drag) {
         self.position.* = self.position.plus(graph.node_drag_delta);
     }
 
@@ -129,69 +126,36 @@ pub fn initInPlace(
     };
     self.card.init(src, .{ .dir = .vertical }, defaults.override(opts));
     self.card.drawBackground();
-
-    if (init_opts.title) |t| self.titleLabel("{s}", .{t});
 }
 
-/// Draw a title row. Anything drawn into the node before its first socket row stacks above the rows.
-pub fn titleLabel(self: *BaseNode, comptime fmt: []const u8, args: anytype) void {
-    std.debug.assert(self.column_side == null);
-    dvui.labelEx(@src(), fmt, args, .{ .ellipsize = false }, .{
-        .padding = .all(2),
-        .expand = .horizontal,
-    });
+/// Begin a section above the socket rows. The caller must `deinit` it.
+pub fn header(self: *Node, src: std.builtin.SourceLocation, opts: dvui.Options) *dvui.BoxWidget {
+    return self.section(src, "header", opts);
 }
 
-/// Make the column for `side` the current parent. Used by `BaseInput`/`BaseOutput`.
-pub fn beginColumn(self: *BaseNode, side: types.Side) void {
-    if (self.column_side) |s| {
-        if (s == side) return;
-        if (s == .output) {
-            dvui.log.err("dvui_node_graph: node {d} declared an input after its outputs", .{self.id});
-        }
-        self.column.deinit();
-    } else {
-        self.body.init(@src(), .{ .dir = .horizontal }, .{ .expand = .horizontal });
+/// Begin the socket rows. The caller must `deinit` it.
+pub fn socketArea(self: *Node, src: std.builtin.SourceLocation, opts: dvui.Options) *SocketArea {
+    return SocketArea.init(src, self, opts);
+}
+
+/// Begin a section below the socket rows. The caller must `deinit` it.
+pub fn footer(self: *Node, src: std.builtin.SourceLocation, opts: dvui.Options) *dvui.BoxWidget {
+    return self.section(src, "footer", opts);
+}
+
+fn section(self: *Node, src: std.builtin.SourceLocation, name: []const u8, opts: dvui.Options) *dvui.BoxWidget {
+    if (self.area_open) {
+        dvui.log.err("dvui_node_graph: node {d} began a {s} inside its socket area; deinit the area first", .{ self.id, name });
     }
-    self.column.init(@src(), .{ .dir = .vertical }, .{
-        .gravity_x = if (side == .output) 1 else 0,
-        .id_extra = @backingInt(side),
-    });
-    self.column_side = side;
+    const defaults: dvui.Options = .{ .expand = .horizontal };
+    return dvui.box(src, .{ .dir = .vertical }, defaults.override(opts));
 }
 
-/// Render every input and output with its name.
-pub fn defaultSockets(self: *BaseNode) void {
-    for (0..self.inputs.len()) |i| self.baseInput(@src(), i, .{ .id_extra = i });
-    for (0..self.outputs.len()) |i| self.baseOutput(@src(), i, .{ .id_extra = i });
-}
-
-/// Row for input socket `index` showing its name.
-pub fn baseInput(self: *BaseNode, src: std.builtin.SourceLocation, index: usize, opts: dvui.Options) void {
-    var w = socket_row.BaseInput.init(src, self, index, opts);
-    defer w.deinit();
-    dvui.label(@src(), "{s}", .{w.name()}, .{});
-}
-
-/// Row for output socket `index` showing its name.
-pub fn baseOutput(self: *BaseNode, src: std.builtin.SourceLocation, index: usize, opts: dvui.Options) void {
-    var w = socket_row.BaseOutput.init(src, self, index, opts);
-    defer w.deinit();
-    dvui.label(@src(), "{s}", .{w.name()}, .{});
-}
-
-pub fn sideSockets(self: *const BaseNode, side: types.Side) Sockets {
-    return switch (side) {
-        .input => self.inputs,
-        .output => self.outputs,
-    };
-}
-
-pub fn data(self: *BaseNode) *dvui.WidgetData {
+pub fn data(self: *Node) *dvui.WidgetData {
     return self.card.data();
 }
 
-fn processEvents(self: *BaseNode) void {
+fn processEvents(self: *Node) void {
     if (!self.graph.interactive()) return;
     const wd = self.card.data();
     const graph = self.graph;
@@ -208,18 +172,17 @@ fn processEvents(self: *BaseNode) void {
                 if (!me.button.pointer()) continue;
                 e.handle(@src(), wd);
                 if (self.init_opts.selectable) {
-                    if (me.mod.shift()) {
-                        graph.select(self.id, .remove);
-                    } else if (me.mod.matchBind("ctrl/cmd")) {
-                        graph.select(self.id, .add);
-                    } else if (!self.selected) {
-                        graph.select(self.id, .replace);
-                    }
+                    const mode: ?GraphWidget.SelectMode = if (me.mod.shift())
+                        .remove
+                    else if (me.mod.matchBind("ctrl/cmd"))
+                        .add
+                    else if (!self.selected) .replace else null;
+                    if (mode) |m| graph.pushEvent(.{ .select = .{ .node = self.id, .mode = m } });
                 }
                 if (self.init_opts.draggable) {
                     dvui.captureMouse(wd, e.num);
                     dvui.dragPreStart(me.button, me.p, .{ .name = GraphWidget.node_drag_name });
-                    graph.beginNodeDrag(wd.id);
+                    graph.beginNodeDrag(wd.id, self.id);
                 }
             },
             .release => if (me.button.pointer() and dvui.captured(wd.id)) {
@@ -228,8 +191,8 @@ fn processEvents(self: *BaseNode) void {
                 drag.end(me.button);
                 const moved = graph.endNodeDrag();
                 // A plain click on one node of a multi-selection narrows to that node.
-                if (!moved and self.init_opts.selectable and !me.mod.shift() and !me.mod.matchBind("ctrl/cmd")) {
-                    graph.select(self.id, .replace);
+                if (!moved and self.init_opts.selectable and self.selected and !me.mod.shift() and !me.mod.matchBind("ctrl/cmd")) {
+                    graph.pushEvent(.{ .select = .{ .node = self.id, .mode = .replace } });
                 }
             },
             .wheel_x, .wheel_y => {},
@@ -238,17 +201,13 @@ fn processEvents(self: *BaseNode) void {
     }
 }
 
-pub fn deinit(self: *BaseNode) void {
+pub fn deinit(self: *Node) void {
     defer if (dvui.widgetIsAllocated(self)) dvui.widgetFree(self);
     defer self.* = undefined;
 
-    if (self.column_side != null) {
-        self.column.deinit();
-        self.body.deinit();
-    }
     self.processEvents();
     if (dvui.captured(self.card.data().id)) dvui.cursorSet(.hand);
-    self.graph.registerNode(self.id, self.card.data().borderRectScale().r);
+    self.graph.registerNode(self.id, self.card.data().borderRectScale().r, self.init_opts.selected);
     self.card.deinit();
     self.front_to_back.deinit();
 }
