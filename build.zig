@@ -21,6 +21,16 @@ fn devSteps(b: *std.Build) void {
     const sdl3: Backend = .init(b, target, optimize, dvui_sdl3_dep.module("dvui_sdl3"));
     const testing: Backend = .init(b, target, optimize, dvui_testing_dep.module("dvui_testing"));
 
+    // dvui.testing.snapshot writes PNGs instead of checking hashes when dvui is built with a suffix
+    const image_suffix = b.option([]const u8, "snapshot-images", "Suffix for test-images PNGs (default \"current\")") orelse "current";
+    const dvui_images_dep = b.lazyDependency("dvui", .{
+        .target = target,
+        .optimize = optimize,
+        .backend = .sdl3,
+        .@"snapshot-images" = image_suffix,
+    }) orelse return;
+    const images: Backend = .init(b, target, optimize, dvui_images_dep.module("dvui_sdl3"));
+
     // demo
     {
         const demo_step = b.step("demo", "Run the SDL3 demo");
@@ -40,11 +50,14 @@ fn devSteps(b: *std.Build) void {
         const test_step = b.step("test", "Run tests (headless)");
         const e2e_tests = b.addTest(.{
             .name = "dvui-node-graph-test-e2e",
-            .root_module = testing.tests(b, false),
+            .root_module = testing.tests(b),
             .filters = test_filters,
         });
         const run = b.addRunArtifact(e2e_tests);
         run.has_side_effects = true;
+        // FIXME: dvui's Options.hash hashes corners and ColorOrGradient as raw bytes, padding
+        // included, so snapshot hashes differ every run. Only render frames until that is fixed.
+        run.setEnvironmentVariable("DVUI_SNAPSHOT_IGNORE", "1");
         test_step.dependOn(&run.step);
 
         const unit_tests = b.addTest(.{ .name = "dvui-node-graph-unit", .root_module = testing.lib, .filters = test_filters });
@@ -52,10 +65,10 @@ fn devSteps(b: *std.Build) void {
     }
 
     {
-        const test_images_step = b.step("test-images", "Render snapshot tests to PNGs in snapshots/images");
+        const test_images_step = b.step("test-images", "Render snapshots to PNGs in snapshots/images instead of checking them");
         const tests = b.addTest(.{
             .name = "dvui-node-graph-test-images",
-            .root_module = sdl3.tests(b, true),
+            .root_module = images.tests(b),
             .filters = test_filters,
         });
         const run = b.addRunArtifact(tests);
@@ -92,12 +105,9 @@ const Backend = struct {
     }
 
     /// e2e tests, which also drive the demo.
-    fn tests(self: Backend, b: *std.Build, images: bool) *std.Build.Module {
+    fn tests(self: Backend, b: *std.Build) *std.Build.Module {
         const m = self.module(b, "src/tests.zig");
         m.addImport("demo", self.module(b, "examples/demo.zig"));
-        const opts = b.addOptions();
-        opts.addOption(bool, "images", images);
-        m.addOptions("test_options", opts);
         return m;
     }
 };

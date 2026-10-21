@@ -136,28 +136,7 @@ fn graphFrame() anyerror!dvui.App.Result {
 
 fn initTest() !dvui.testing {
     fx.deinit();
-    return dvui.testing.init(.{ .window_size = .{ .w = 600, .h = 400 }, .snapshot_dir = "snapshots" });
-}
-
-/// In `zig build test-images`, renders the next frame to
-/// `<snapshot_dir>/images/<file>-<test>-<n>.png`. Writes the PNG directly instead of using
-/// `dvui.testing.snapshot`, which does not build on zig 0.16 in upstream dvui yet.
-fn snapshotIfImages(t: *dvui.testing, src: std.builtin.SourceLocation, frame: dvui.App.frameFunction) !void {
-    if (!@import("test_options").images) return;
-    defer t.snapshot_index += 1;
-    const io = dvui.io;
-    const alloc = std.testing.allocator;
-    const dir_path = try std.fmt.allocPrint(alloc, "{s}/images", .{t.snapshot_dir});
-    defer alloc.free(dir_path);
-    try std.Io.Dir.cwd().createDirPath(io, dir_path);
-    const path = try std.fmt.allocPrint(alloc, "{s}/{s}-{s}-{d}.png", .{ dir_path, src.file, src.fn_name, t.snapshot_index });
-    defer alloc.free(path);
-    var file = try std.Io.Dir.cwd().createFile(io, path, .{});
-    defer file.close(io);
-    var buf: [512]u8 = undefined;
-    var writer = file.writer(io, &buf);
-    try dvui.testing.capturePng(frame, null, &writer.interface);
-    try writer.end();
+    return dvui.testing.init(.{ .window_size = .{ .w = 600, .h = 400 } });
 }
 
 test "graph renders and remembers node positions" {
@@ -224,7 +203,7 @@ test "box select previews while dragging and reports the boxed nodes on release"
     _ = try cw.addEventMouseMotion(.{ .pt = .{ .x = n3.x + n3.w / 2, .y = n3.y + n3.h / 2 } });
     try dvui.testing.settle(graphFrame);
     // nodes 1 and 3 draw selected, but nothing is selected until release
-    try snapshotIfImages(&t, @src(), graphFrame);
+    try t.snapshot(@src(), graphFrame, .{});
     try std.testing.expect(fx.selected.items.len == 0);
 
     _ = try cw.addEventMouseButton(.left, .release);
@@ -271,7 +250,7 @@ fn dragPreviewEdge(t: *dvui.testing, from_tag: []const u8, to_tag: []const u8, s
     _ = try dvui.testing.step(graphFrame);
     _ = try cw.addEventMouseMotion(.{ .pt = target.plus(.{ .x = -60, .y = 70 }) });
     _ = try dvui.testing.step(graphFrame);
-    try snapshotIfImages(t, src, graphFrame);
+    try t.snapshot(src, graphFrame, .{});
     _ = try cw.addEventMouseMotion(.{ .pt = target });
     _ = try dvui.testing.step(graphFrame);
     _ = try cw.addEventMouseMotion(.{ .pt = target });
@@ -290,7 +269,7 @@ test "dragging a preview edge from an output onto an input creates an edge" {
 
     try std.testing.expectEqual(1, fx.edges.items.len);
     try std.testing.expect(fx.edges.items[0].eql(.{ .source = .output(1, 0), .target = .input(2, 0) }));
-    try snapshotIfImages(&t, @src(), graphFrame);
+    try t.snapshot(@src(), graphFrame, .{});
 }
 
 test "output to output edges need allow_same_side_edges" {
@@ -308,7 +287,7 @@ test "output to output edges need allow_same_side_edges" {
     try dragPreviewEdge(&t, "out-1-0", "out-2-0", @src());
     try std.testing.expectEqual(1, fx.edges.items.len);
     try std.testing.expect(fx.edges.items[0].eql(.{ .source = .output(1, 0), .target = .output(2, 0) }));
-    try snapshotIfImages(&t, @src(), graphFrame);
+    try t.snapshot(@src(), graphFrame, .{});
 }
 
 test "clicking a socket reports a socket click event" {
@@ -592,11 +571,11 @@ fn styledFrame() anyerror!dvui.App.Result {
 }
 
 test "style overrides render" {
-    var t = try dvui.testing.init(.{ .window_size = .{ .w = 600, .h = 400 }, .snapshot_dir = "snapshots" });
+    var t = try dvui.testing.init(.{ .window_size = .{ .w = 600, .h = 400 } });
     defer t.deinit();
     try dvui.testing.settle(styledFrame);
     try dvui.testing.expectVisible("styled-graph");
-    try snapshotIfImages(&t, @src(), styledFrame);
+    try t.snapshot(@src(), styledFrame, .{});
 }
 
 const demo = @import("demo");
@@ -611,7 +590,7 @@ fn demoNode(id: ng.NodeId) *demo.Node {
 }
 
 test "demo: the add node's + adds inputs" {
-    var t = try dvui.testing.init(.{ .window_size = .{ .w = 1000, .h = 700 }, .snapshot_dir = "snapshots" });
+    var t = try dvui.testing.init(.{ .window_size = .{ .w = 1000, .h = 700 } });
     defer t.deinit();
     try demo.init(t.window);
     defer demo.deinit(t.window);
@@ -646,7 +625,7 @@ test "demo: the add node's + adds inputs" {
     var linked = false;
     for (demo.edges.items) |e| linked = linked or e.eql(.{ .source = .output(1, 0), .target = .input(3, 3) });
     try std.testing.expect(linked);
-    try snapshotIfImages(&t, @src(), demoFrame);
+    try t.snapshot(@src(), demoFrame, .{});
 }
 
 fn clickTag(tag: []const u8) !void {
@@ -664,11 +643,11 @@ test "click-to-link: click two sockets to link them; other clicks drop the selec
 
     try clickTag("out-1-0");
     try std.testing.expect(fx.selected_socket.?.eql(.output(1, 0)));
-    try snapshotIfImages(&t, @src(), graphFrame);
+    try t.snapshot(@src(), graphFrame, .{});
     // hovering a socket it can link to previews the edge
     try dvui.testing.moveTo("in-2-0");
     try dvui.testing.settle(graphFrame);
-    try snapshotIfImages(&t, @src(), graphFrame);
+    try t.snapshot(@src(), graphFrame, .{});
 
     try clickTag("in-2-0");
     try std.testing.expect(fx.selected_socket == null);
