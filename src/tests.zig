@@ -14,7 +14,7 @@ const Fixture = struct {
     view: ng.GraphWidget.View = .{},
     edges: std.ArrayList(ng.Edge) = .empty,
     events: std.ArrayList(ng.GraphWidget.Event) = .empty,
-    socket_events: std.ArrayList(struct { socket: ng.SocketId, event: ng.BaseSocket.Event }) = .empty,
+    socket_events: std.ArrayList(struct { socket: ng.SocketId, event: ng.ManagedSocket.Event }) = .empty,
     node1_pos: dvui.Point = .{ .x = 20, .y = 40 },
     node2_pos: dvui.Point = .{ .x = 260, .y = 140 },
     node3_pos: dvui.Point = .{ .x = 20, .y = 220 },
@@ -45,24 +45,28 @@ fn imperativeFrame() anyerror!dvui.App.Result {
     defer graph.deinit();
 
     {
-        var node = graph.node(@src(), 1, &fx.node1_pos, .{ .title = "one" }, .{ .tag = "node-1" });
+        var node = graph.node(@src(), 1, &fx.node1_pos, .{}, .{ .tag = "node-1" });
         defer node.deinit();
-        node.baseInput(@src(), 0, "x", .{});
-        var row = ng.BaseOutput.initEx(@src(), node, 0, .{ .socket_opts = .{ .tag = "out-1-0" } }, .{});
+        dvui.label(@src(), "one", .{}, .{});
+        var area = node.socketArea(@src(), .{});
+        defer area.deinit();
+        area.managedInput(@src(), 0, "x", .{});
+        var row = ng.ManagedOutput.initEx(@src(), area, 0, .{ .socket_opts = .{ .tag = "out-1-0" } }, .{});
         defer row.deinit();
         dvui.label(@src(), "s", .{}, .{});
     }
 
-    graph.managedNodeEx(@src(), 3, &fx.node3_pos, ng.socketsOfType(struct { a: bool, b: f32 }, .input), ng.socketsOfType(struct { c: u8 }, .output), .{
-        .title = "three",
-    }, .{ .tag = "node-3" });
+    graph.managedNodeEx(@src(), 3, &fx.node3_pos, struct { a: bool, b: f32 }, struct { c: u8 }, .{ .title = "three" }, .{ .tag = "node-3" });
 
     {
-        var node = graph.node(@src(), 2, &fx.node2_pos, .{ .title = "two" }, .{ .tag = "node-2" });
+        var node = graph.node(@src(), 2, &fx.node2_pos, .{}, .{ .tag = "node-2" });
         defer node.deinit();
+        dvui.label(@src(), "two", .{}, .{});
+        var area = node.socketArea(@src(), .{});
+        defer area.deinit();
 
         {
-            var row = ng.BaseInput.initEx(@src(), node, 0, .{ .socket_opts = .{ .tag = "in-2-0" } }, .{});
+            var row = ng.ManagedInput.initEx(@src(), area, 0, .{ .socket_opts = .{ .tag = "in-2-0" } }, .{});
             defer row.deinit();
             dvui.labelNoFmt(@src(), "s", .{}, .{});
 
@@ -71,7 +75,7 @@ fn imperativeFrame() anyerror!dvui.App.Result {
             };
         }
         {
-            var row = ng.BaseOutput.initEx(@src(), node, 0, .{ .socket_opts = .{ .tag = "out-2-0" } }, .{});
+            var row = ng.ManagedOutput.initEx(@src(), area, 0, .{ .socket_opts = .{ .tag = "out-2-0" } }, .{});
             defer row.deinit();
             dvui.label(@src(), "out", .{}, .{});
         }
@@ -273,7 +277,7 @@ const Decl = struct {
 
     const Add = ng.declarative.NodeType(struct { a: i32, b: i32 }, struct { sum: i32 });
 
-    fn onClickSocket(self: *Decl, socket: ng.SocketId, click: ng.BaseSocket.Click) void {
+    fn onClickSocket(self: *Decl, socket: ng.SocketId, click: ng.ManagedSocket.Click) void {
         _ = socket;
         _ = click;
         self.clicks += 1;
@@ -283,7 +287,7 @@ const Decl = struct {
         if (e == .link_created) self.links += 1;
     }
 
-    fn drawInputLabel(self: *Decl, row: *ng.BaseInput, desc: ng.declarative.Node, name: []const u8) void {
+    fn drawInputLabel(self: *Decl, row: *ng.ManagedInput, desc: ng.declarative.Node, name: []const u8) void {
         _ = self;
         _ = row;
         dvui.label(@src(), "{s}.{s}", .{ desc.title orelse "?", name }, .{});
@@ -333,35 +337,49 @@ fn readmeFrame() anyerror!dvui.App.Result {
     var graph = ng.graph(@src(), .{ .style = style }, .{});
     defer graph.deinit();
 
-    // a named row per socket
-    graph.managedNode(@src(), 1, &model.positions[0], .{ .side = .input, .names = &.{"x"} }, .{ .side = .output, .names = &.{"s"} });
+    // a title and a named row per field
+    graph.managedNodeEx(@src(), 1, &model.positions[0], struct { x: f32 }, struct { s: []const u8 }, .{ .title = "one" }, .{});
 
-    // node that draws its own socket rows; its sockets are whatever rows it declares
+    // node that draws everything itself; its sockets are whatever rows it declares
     {
-        var node = graph.node(@src(), 2, &model.positions[1], .{ .title = "two" }, .{});
+        var node = graph.node(@src(), 2, &model.positions[1], .{}, .{});
         defer node.deinit();
-
-        for (model.input_names, 0..) |name, i| {
-            var row = ng.BaseInput.init(@src(), node, i, .{ .id_extra = i }); // socket .input(i)
-            defer row.deinit();
-            // anything drawn here lands next to the socket
-            dvui.label(@src(), "{s}", .{name}, .{});
-
-            for (row.events()) |e| switch (e) {
-                .socket => |se| switch (se) {
-                    .mouse => |me| switch (me) {
-                        .click => |click| std.log.info("clicked at {any}", .{click.p}),
-                        .press => {},
-                    },
-                    .wire => |we| switch (we) {
-                        .start => {},
-                        .connect => |other| std.log.info("wired to {any}", .{other}),
-                        .drop => |graph_point| std.log.info("dropped at {any}", .{graph_point}),
-                    },
-                },
-            };
+        {
+            var header = node.header(@src(), .{});
+            defer header.deinit();
+            dvui.label(@src(), "two", .{}, .{});
         }
-        node.baseOutput(@src(), 0, "out", .{}); // shorthand for a row with just a label
+
+        {
+            var area = node.socketArea(@src(), .{});
+            defer area.deinit();
+            for (model.input_names, 0..) |name, i| {
+                var row = ng.ManagedInput.init(@src(), area, i, .{ .id_extra = i }); // socket .input(i)
+                defer row.deinit();
+                // anything drawn here lands next to the socket
+                dvui.label(@src(), "{s}", .{name}, .{});
+
+                for (row.events()) |e| switch (e) {
+                    .socket => |se| switch (se) {
+                        .mouse => |me| switch (me) {
+                            .click => |click| std.log.info("clicked at {any}", .{click.p}),
+                            .press => {},
+                        },
+                        .wire => |we| switch (we) {
+                            .start => {},
+                            .connect => |other| std.log.info("wired to {any}", .{other}),
+                            .drop => |graph_point| std.log.info("dropped at {any}", .{graph_point}),
+                        },
+                    },
+                };
+            }
+            area.managedOutput(@src(), 0, "out", .{}); // shorthand for a row with just a label
+        }
+        {
+            var footer = node.footer(@src(), .{});
+            defer footer.deinit();
+            dvui.label(@src(), "below the sockets", .{}, .{});
+        }
     }
 
     // edges go after the nodes that own their sockets
@@ -383,6 +401,30 @@ test "README imperative example" {
     var t = try dvui.testing.init(.{ .window_size = .{ .w = 600, .h = 400 } });
     defer t.deinit();
     try dvui.testing.settle(readmeFrame);
+}
+
+const ReserveFixture = struct {
+    var positions = [_]dvui.Point{ .{ .x = 20, .y = 40 }, .{ .x = 200, .y = 40 } };
+    var socket_capacity: usize = 0;
+    var node_capacity: usize = 0;
+
+    fn frame() anyerror!dvui.App.Result {
+        var graph = ng.graph(@src(), .{}, .{});
+        defer graph.deinit();
+        socket_capacity = graph.sockets.capacity;
+        node_capacity = graph.nodes.capacity;
+        graph.managedNode(@src(), 1, &positions[0], struct { a: f32, b: f32 }, struct { c: f32 });
+        graph.managedNode(@src(), 2, &positions[1], struct { a: f32 }, struct {});
+        return .ok;
+    }
+};
+
+test "a graph reserves last frame's sockets and nodes up front" {
+    var t = try dvui.testing.init(.{ .window_size = .{ .w = 600, .h = 400 } });
+    defer t.deinit();
+    try dvui.testing.settle(ReserveFixture.frame);
+    try std.testing.expect(ReserveFixture.socket_capacity >= 4);
+    try std.testing.expect(ReserveFixture.node_capacity >= 2);
 }
 
 /// A graph whose node 2 has a free-floating "+" socket for input 5, which it doesn't have yet.
@@ -417,20 +459,24 @@ const PlusFixture = struct {
         {
             var node = graph.node(@src(), 1, &positions[0], .{}, .{ .tag = "pn-1" });
             defer node.deinit();
-            var row = ng.BaseOutput.initEx(@src(), node, 0, .{ .socket_opts = .{ .tag = "pn-out" } }, .{});
+            var area = node.socketArea(@src(), .{});
+            defer area.deinit();
+            var row = ng.ManagedOutput.initEx(@src(), area, 0, .{ .socket_opts = .{ .tag = "pn-out" } }, .{});
             defer row.deinit();
             dvui.label(@src(), "out", .{}, .{});
         }
         {
             var node = graph.node(@src(), 2, &positions[1], .{}, .{ .tag = "pn-2" });
             defer node.deinit();
-            node.baseInput(@src(), 0, "a", .{});
+            var area = node.socketArea(@src(), .{});
+            defer area.deinit();
+            area.managedInput(@src(), 0, "a", .{});
             // floats left of the card, not part of the layout
             const card = node.card.data().borderRectScale().r;
-            var plus = ng.BaseSocket.init(@src(), graph, .input(2, 5), .{
+            var plus = ng.ManagedSocket.init(@src(), graph, .input(2, 5), .{
                 .style = .{ .icon = .{ .name = "test_plus", .tvg = dvui.entypo.circle_with_plus } },
                 .edge_overlap = false,
-            }, .{ .rect = node.column.data().contentRectScale().rectFromPhysical(.{ .x = card.x - 30, .y = card.y, .w = 20, .h = 20 }), .tag = "plus" });
+            }, .{ .rect = area.column.data().contentRectScale().rectFromPhysical(.{ .x = card.x - 30, .y = card.y, .w = 20, .h = 20 }), .tag = "plus" });
             plus.deinit();
         }
         for (graph.events()) |e| try events.append(std.testing.allocator, e);

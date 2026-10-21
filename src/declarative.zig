@@ -14,19 +14,19 @@ const dvui = @import("dvui");
 
 const types = @import("types.zig");
 const GraphWidget = @import("GraphWidget.zig");
-const BaseNode = @import("BaseNode.zig");
-const BaseSocket = @import("BaseSocket.zig");
+const ManagedNode = @import("ManagedNode.zig");
+const ManagedSocket = @import("ManagedSocket.zig");
 const socket_row = @import("socket_row.zig");
 
 const NodeId = types.NodeId;
-const Sockets = types.Sockets;
 const SocketId = types.SocketId;
 
 pub const Node = struct {
     id: NodeId,
     title: ?[]const u8 = null,
-    inputs: Sockets = .none(.input),
-    outputs: Sockets = .none(.output),
+    /// One named row per socket: socket `i` of a side is `(side, i)`.
+    inputs: []const []const u8 = &.{},
+    outputs: []const []const u8 = &.{},
     /// Initial position; afterwards `graph` remembers where the user dragged it.
     position: dvui.Point = .{},
 };
@@ -34,8 +34,8 @@ pub const Node = struct {
 /// A node "type" whose sockets come from the fields of two struct types.
 pub fn NodeType(comptime Inputs: type, comptime Outputs: type) type {
     return struct {
-        pub const inputs = types.socketsOfType(Inputs, .input);
-        pub const outputs = types.socketsOfType(Outputs, .output);
+        pub const inputs = fieldNames(Inputs);
+        pub const outputs = fieldNames(Outputs);
 
         pub fn node(id: NodeId, title: ?[]const u8) Node {
             return .{ .id = id, .title = title, .inputs = inputs, .outputs = outputs };
@@ -49,21 +49,31 @@ pub fn NodeType(comptime Inputs: type, comptime Outputs: type) type {
     };
 }
 
+fn fieldNames(comptime T: type) []const []const u8 {
+    const names = comptime blk: {
+        const src = std.meta.fieldNames(T);
+        var out: [src.len][]const u8 = undefined;
+        for (src, &out) |n, *o| o.* = n;
+        break :blk out;
+    };
+    return &names;
+}
+
 pub fn Spec(comptime Ctx: type) type {
     return struct {
         nodes: []const Node,
         edges: []const types.Edge = &.{},
         graph: GraphWidget.InitOptions = .{},
         /// Replace the default title row.
-        draw_node_title: ?*const fn (ctx: Ctx, node: *BaseNode, desc: Node) void = null,
+        draw_node_title: ?*const fn (ctx: Ctx, node: *ManagedNode, desc: Node) void = null,
         /// Replace the name label of an input row; draw into the row (it is the current parent).
-        /// `name` is the socket's entry in `desc.inputs.names`.
-        draw_input_label: ?*const fn (ctx: Ctx, row: *socket_row.BaseInput, desc: Node, name: []const u8) void = null,
-        draw_output_label: ?*const fn (ctx: Ctx, row: *socket_row.BaseOutput, desc: Node, name: []const u8) void = null,
+        /// `name` is the socket's entry in `desc.inputs`.
+        draw_input_label: ?*const fn (ctx: Ctx, row: *socket_row.ManagedInput, desc: Node, name: []const u8) void = null,
+        draw_output_label: ?*const fn (ctx: Ctx, row: *socket_row.ManagedOutput, desc: Node, name: []const u8) void = null,
         /// Every event from every socket.
-        on_socket_event: ?*const fn (ctx: Ctx, socket: SocketId, event: BaseSocket.Event) void = null,
+        on_socket_event: ?*const fn (ctx: Ctx, socket: SocketId, event: ManagedSocket.Event) void = null,
         /// Shorthand for `on_socket_event` filtered to clicks.
-        on_click_socket: ?*const fn (ctx: Ctx, socket: SocketId, click: BaseSocket.Click) void = null,
+        on_click_socket: ?*const fn (ctx: Ctx, socket: SocketId, click: ManagedSocket.Click) void = null,
         /// Every graph-level event (`link_created`, `nodes_moved`, ...).
         on_event: ?*const fn (ctx: Ctx, event: GraphWidget.Event) void = null,
         /// Called for each edge that was clicked (also reported through `on_event`).
@@ -84,16 +94,18 @@ pub fn graph(src: std.builtin.SourceLocation, ctx: anytype, spec: Spec(@TypeOf(c
     defer g.deinit();
 
     for (spec.nodes) |desc| {
-        var n = BaseNode.init(@src(), g, desc.id, positionPtr(g, desc), .{}, .{});
+        var n = ManagedNode.init(@src(), g, desc.id, positionPtr(g, desc), .{}, .{});
         defer n.deinit();
 
-        if (spec.draw_node_title) |f| f(ctx, n, desc) else if (desc.title) |t| n.titleLabel("{s}", .{t});
+        if (spec.draw_node_title) |f| f(ctx, n, desc) else if (desc.title) |t| {
+            dvui.labelEx(@src(), "{s}", .{t}, .{ .ellipsize = false }, .{ .padding = .all(2), .expand = .horizontal });
+        }
 
-        inline for (.{ socket_row.BaseInput, socket_row.BaseOutput }, .{ desc.inputs, desc.outputs }, .{ spec.draw_input_label, spec.draw_output_label }) |Row, list, draw_label| {
-            for (0..list.len()) |i| {
-                var row = Row.initEx(@src(), n, list.socket(i).index, .{
-                    .socket = .{ .style = list.style(i), .color = list.color(i) },
-                }, .{ .id_extra = i });
+        var area = n.socketArea(@src(), .{});
+        defer area.deinit();
+        inline for (.{ socket_row.ManagedInput, socket_row.ManagedOutput }, .{ desc.inputs, desc.outputs }, .{ spec.draw_input_label, spec.draw_output_label }) |Row, names, draw_label| {
+            for (names, 0..) |name, i| {
+                var row = Row.init(@src(), area, i, .{ .id_extra = i });
                 defer row.deinit();
                 for (row.events()) |e| switch (e) {
                     .socket => |se| {
@@ -107,7 +119,7 @@ pub fn graph(src: std.builtin.SourceLocation, ctx: anytype, spec: Spec(@TypeOf(c
                         };
                     },
                 };
-                if (draw_label) |f| f(ctx, row, desc, list.names[i]) else dvui.label(@src(), "{s}", .{list.names[i]}, .{});
+                if (draw_label) |f| f(ctx, row, desc, name) else dvui.label(@src(), "{s}", .{name}, .{});
             }
         }
     }

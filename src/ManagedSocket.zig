@@ -1,6 +1,6 @@
-//! A connection pin. Draws an icon, grows as the mouse approaches, and starts wire drags.
+//! A connection socket. Draws an icon, grows as the mouse approaches, and starts wire drags.
 //!
-//! Lay it out in a row (usually through `BaseInput`/`BaseOutput`) or place it anywhere with
+//! Lay it out in a row (usually through `ManagedInput`/`ManagedOutput`) or place it anywhere with
 //! `.rect` in its dvui options. A socket doesn't have to exist in your model: a "+" that adds an
 //! input is just a socket with a plus icon whose id is the input you would add; handle
 //! `link_created`/`socket_clicked` for it by creating that input.
@@ -17,7 +17,7 @@ const GraphWidget = @import("GraphWidget.zig");
 
 const SocketId = types.SocketId;
 
-const BaseSocket = @This();
+const ManagedSocket = @This();
 
 pub const InitOptions = struct {
     /// Overrides the graph's `style.socket` icons for this socket.
@@ -68,14 +68,14 @@ hover: bool = false,
 /// True while a wire being dragged from elsewhere would connect here.
 wire_target: bool = false,
 
-pub fn init(src: std.builtin.SourceLocation, graph: *GraphWidget, socket: SocketId, init_opts: InitOptions, opts: dvui.Options) *BaseSocket {
-    const self = dvui.widgetAlloc(BaseSocket);
+pub fn init(src: std.builtin.SourceLocation, graph: *GraphWidget, socket: SocketId, init_opts: InitOptions, opts: dvui.Options) *ManagedSocket {
+    const self = dvui.widgetAlloc(ManagedSocket);
     self.initInPlace(src, graph, socket, init_opts, opts);
     return self;
 }
 
 /// It's expected to call this when `self` is `undefined`.
-pub fn initInPlace(self: *BaseSocket, src: std.builtin.SourceLocation, graph: *GraphWidget, socket: SocketId, init_opts: InitOptions, opts: dvui.Options) void {
+pub fn initInPlace(self: *ManagedSocket, src: std.builtin.SourceLocation, graph: *GraphWidget, socket: SocketId, init_opts: InitOptions, opts: dvui.Options) void {
     const r = graph.style().socket.radius;
     const pull = r + graph.style().node.padding;
     const defaults: dvui.Options = .{
@@ -116,28 +116,28 @@ pub fn initInPlace(self: *BaseSocket, src: std.builtin.SourceLocation, graph: *G
     self.drawSocket(border);
 }
 
-pub fn data(self: *BaseSocket) *dvui.WidgetData {
+pub fn data(self: *ManagedSocket) *dvui.WidgetData {
     return self.wd.validate();
 }
 
-pub fn events(self: *const BaseSocket) []const Event {
+pub fn events(self: *const ManagedSocket) []const Event {
     return self.events_list.items;
 }
 
-pub fn hovered(self: *const BaseSocket) bool {
+pub fn hovered(self: *const ManagedSocket) bool {
     return self.hover or self.wire_target;
 }
 
 /// Physical border rect of the socket (full size, independent of proximity scale).
-pub fn rect(self: *BaseSocket) dvui.Rect.Physical {
+pub fn rect(self: *ManagedSocket) dvui.Rect.Physical {
     return self.data().borderRectScale().r;
 }
 
-pub fn matchEvent(self: *BaseSocket, e: *dvui.Event) bool {
+pub fn matchEvent(self: *ManagedSocket, e: *dvui.Event) bool {
     return dvui.eventMatchSimple(e, self.data());
 }
 
-fn processEvents(self: *BaseSocket) void {
+fn processEvents(self: *ManagedSocket) void {
     const wd = self.data();
     for (dvui.events()) |*e| {
         if (!self.matchEvent(e) or e.evt != .mouse) continue;
@@ -164,7 +164,7 @@ fn processEvents(self: *BaseSocket) void {
     }
 }
 
-fn drawSocket(self: *BaseSocket, slot: dvui.Rect.Physical) void {
+fn drawSocket(self: *ManagedSocket, slot: dvui.Rect.Physical) void {
     const ss = self.init_opts.style orelse self.graph.style().socket;
     const connected = self.init_opts.connected orelse self.graph.isConnected(self.socket);
     const selected = if (self.graph.selectedSocket()) |sel| sel.eql(self.socket) else false;
@@ -192,7 +192,7 @@ fn drawSocket(self: *BaseSocket, slot: dvui.Rect.Physical) void {
     }
 }
 
-pub fn deinit(self: *BaseSocket) void {
+pub fn deinit(self: *ManagedSocket) void {
     defer if (dvui.widgetIsAllocated(self)) dvui.widgetFree(self);
     defer self.* = undefined;
     self.data().minSizeSetAndRefresh();

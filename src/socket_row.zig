@@ -1,16 +1,17 @@
-//! `BaseInput` / `BaseOutput`: one row of a node holding a socket plus caller-supplied content
-//! (labels, literal editors, ...). Anything created between `init` and `deinit` lands in the
-//! row's content box, beside the socket.
+//! `ManagedInput` / `ManagedOutput`: one row of a node's `SocketArea` holding a socket plus
+//! caller-supplied content (labels, literal editors, ...). Anything created between `init` and
+//! `deinit` lands in the row's content box, beside the socket.
 
 const std = @import("std");
 const dvui = @import("dvui");
 
 const types = @import("types.zig");
-const BaseNode = @import("BaseNode.zig");
-const BaseSocket = @import("BaseSocket.zig");
+const ManagedNode = @import("ManagedNode.zig");
+const SocketArea = @import("SocketArea.zig");
+const ManagedSocket = @import("ManagedSocket.zig");
 
-pub const BaseInput = SocketRow(.input);
-pub const BaseOutput = SocketRow(.output);
+pub const ManagedInput = SocketRow(.input);
+pub const ManagedOutput = SocketRow(.output);
 
 pub fn SocketRow(comptime side: types.Side) type {
     return struct {
@@ -18,16 +19,16 @@ pub fn SocketRow(comptime side: types.Side) type {
 
         pub const Event = union(enum) {
             /// Events from the row's socket.
-            socket: BaseSocket.Event,
+            socket: ManagedSocket.Event,
         };
 
         pub const InitOptions = struct {
-            socket: BaseSocket.InitOptions = .{},
+            socket: ManagedSocket.InitOptions = .{},
             /// dvui options for the socket widget (e.g. `.tag`).
             socket_opts: dvui.Options = .{},
         };
 
-        node: *BaseNode,
+        node: *ManagedNode,
         /// The socket's index on its side: the row is socket `(side, index)` of its node.
         index: u31,
         row: dvui.BoxWidget = undefined,
@@ -37,20 +38,21 @@ pub fn SocketRow(comptime side: types.Side) type {
         /// Physical rect of the socket slot.
         socket_rect: dvui.Rect.Physical = .{},
 
-        pub fn init(src: std.builtin.SourceLocation, node: *BaseNode, index: usize, opts: dvui.Options) *Self {
-            return initEx(src, node, index, .{}, opts);
+        pub fn init(src: std.builtin.SourceLocation, area: *SocketArea, index: usize, opts: dvui.Options) *Self {
+            return initEx(src, area, index, .{}, opts);
         }
 
-        pub fn initEx(src: std.builtin.SourceLocation, node: *BaseNode, index: usize, init_opts: InitOptions, opts: dvui.Options) *Self {
+        pub fn initEx(src: std.builtin.SourceLocation, area: *SocketArea, index: usize, init_opts: InitOptions, opts: dvui.Options) *Self {
             const self = dvui.widgetAlloc(Self);
+            const node = area.node;
             self.* = .{ .node = node, .index = @intCast(index) };
-            node.beginColumn(side);
+            area.beginColumn(side);
 
             const gravity_x: f32 = if (side == .output) 1 else 0;
             const defaults: dvui.Options = .{ .expand = .horizontal, .gravity_x = gravity_x };
             self.row.init(src, .{ .dir = .horizontal }, defaults.override(opts));
 
-            var socket = BaseSocket.init(@src(), node.graph, self.socketId(), init_opts.socket, init_opts.socket_opts);
+            var socket = ManagedSocket.init(@src(), node.graph, self.socketId(), init_opts.socket, init_opts.socket_opts);
             const socket_events = socket.events();
             self.socket_hovered = socket.hovered();
             self.socket_rect = socket.rect();
@@ -86,6 +88,6 @@ pub fn SocketRow(comptime side: types.Side) type {
 }
 
 test {
-    std.testing.refAllDecls(BaseInput);
-    std.testing.refAllDecls(BaseOutput);
+    std.testing.refAllDecls(ManagedInput);
+    std.testing.refAllDecls(ManagedOutput);
 }

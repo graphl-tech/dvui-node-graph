@@ -1,7 +1,4 @@
 const std = @import("std");
-const dvui = @import("dvui");
-
-const Style = @import("Style.zig");
 
 /// Caller-chosen stable identifier for a node. Must be unique within a graph.
 pub const NodeId = u64;
@@ -79,84 +76,6 @@ pub const Edge = struct {
         return a.source.eql(b.source) and a.target.eql(b.target);
     }
 };
-
-/// The input or the output sockets of one node.
-/// Socket count is derived from `names`, other slices
-/// can have less entries to use a default.
-pub const Sockets = struct {
-    side: Side,
-    names: []const []const u8 = &.{},
-    /// Id of each socket. Empty means positional: socket `i` is `(side, i)`.
-    ids: []const Socket = &.{},
-    colors: []const ?dvui.Color = &.{},
-    /// Per-socket look (icons, ...); null uses the graph's `style.socket`.
-    styles: []const ?Style.Socket = &.{},
-
-    // TODO: rename to empty, maybe empty_input and empty_output instead of .empty(.input)
-    pub fn none(side: Side) Sockets {
-        return .{ .side = side };
-    }
-
-    pub fn len(self: Sockets) usize {
-        return self.names.len;
-    }
-
-    pub fn socket(self: Sockets, i: usize) Socket {
-        return if (i < self.ids.len) self.ids[i] else .{ .side = self.side, .index = @intCast(i) };
-    }
-
-    pub fn socketId(self: Sockets, node: NodeId, i: usize) SocketId {
-        return .{ .node = node, .socket = self.socket(i) };
-    }
-
-    pub fn style(self: Sockets, i: usize) ?Style.Socket {
-        return if (i < self.styles.len) self.styles[i] else null;
-    }
-
-    pub fn color(self: Sockets, i: usize) ?dvui.Color {
-        return if (i < self.colors.len) self.colors[i] else null;
-    }
-
-    /// Index of the socket `s`, if any.
-    pub fn indexOf(self: Sockets, s: Socket) ?usize {
-        for (0..self.len()) |i| if (self.socket(i).eql(s)) return i;
-        return null;
-    }
-};
-
-/// Sockets named after the fields of a struct type. Usable at comptime.
-pub fn socketsOfType(comptime T: type, comptime side: Side) Sockets {
-    const S = struct {
-        const fields = @typeInfo(T).@"struct".fields;
-        const names = blk: {
-            var out: [fields.len][]const u8 = undefined;
-            for (fields, 0..) |f, i| out[i] = f.name;
-            const final = out;
-            break :blk final;
-        };
-    };
-    return .{ .side = side, .names = &S.names };
-}
-
-test socketsOfType {
-    const ps = comptime socketsOfType(struct { a: f32, b: u8 }, .output);
-    try std.testing.expectEqual(2, ps.len());
-    try std.testing.expectEqualStrings("b", ps.names[1]);
-    try std.testing.expect(ps.socket(1).eql(.output(1)));
-}
-
-test "Sockets with explicit ids" {
-    const ps: Sockets = .{
-        .side = .input,
-        .names = &.{ "exec", "value" },
-        .ids = &.{ .input(0), .input(7) },
-        .colors = &.{dvui.Color.black},
-    };
-    try std.testing.expect(ps.socket(1).eql(.input(7)));
-    try std.testing.expect(ps.color(0) != null);
-    try std.testing.expect(ps.color(1) == null);
-    try std.testing.expectEqual(1, ps.indexOf(.input(7)).?);
-}
 
 test "Edge.normalized" {
     const e = Edge.normalized(SocketId.input(2, 0), SocketId.output(1, 3));

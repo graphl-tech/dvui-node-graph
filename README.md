@@ -34,35 +34,49 @@ style.node.corner_radius = 4;
 var graph = ng.graph(@src(), .{ .style = style }, .{});
 defer graph.deinit();
 
-// a named row per socket
-graph.managedNode(@src(), 1, &positions[0], .{ .side = .input, .names = &.{"x"} }, .{ .side = .output, .names = &.{"s"} });
+// a title and a named row per field
+graph.managedNodeEx(@src(), 1, &positions[0], struct { x: f32 }, struct { s: []const u8 }, .{ .title = "one" }, .{});
 
-// node that draws its own socket rows; its sockets are whatever rows it declares
+// node that draws everything itself; its sockets are whatever rows it declares
 {
-    var node = graph.node(@src(), 2, &positions[1], .{ .title = "two" }, .{});
+    var node = graph.node(@src(), 2, &positions[1], .{}, .{});
     defer node.deinit();
-
-    for (input_names, 0..) |name, i| {
-        var row = ng.BaseInput.init(@src(), node, i, .{ .id_extra = i }); // socket .input(i)
-        defer row.deinit();
-        // anything drawn here lands next to the socket
-        dvui.label(@src(), "{s}", .{name}, .{});
-
-        for (row.events()) |e| switch (e) {
-            .socket => |se| switch (se) {
-                .mouse => |me| switch (me) {
-                    .click => |click| std.log.info("clicked at {any}", .{click.p}),
-                    .press => {},
-                },
-                .wire => |we| switch (we) {
-                    .start => {},
-                    .connect => |other| std.log.info("wired to {any}", .{other}),
-                    .drop => |graph_point| std.log.info("dropped at {any}", .{graph_point}),
-                },
-            },
-        };
+    {
+        var header = node.header(@src(), .{});
+        defer header.deinit();
+        dvui.label(@src(), "two", .{}, .{});
     }
-    node.baseOutput(@src(), 0, "out", .{}); // shorthand for a row with just a label
+
+    {
+        var area = node.socketArea(@src(), .{});
+        defer area.deinit();
+        for (input_names, 0..) |name, i| {
+            var row = ng.ManagedInput.init(@src(), area, i, .{ .id_extra = i }); // socket .input(i)
+            defer row.deinit();
+            // anything drawn here lands next to the socket
+            dvui.label(@src(), "{s}", .{name}, .{});
+
+            for (row.events()) |e| switch (e) {
+                .socket => |se| switch (se) {
+                    .mouse => |me| switch (me) {
+                        .click => |click| std.log.info("clicked at {any}", .{click.p}),
+                        .press => {},
+                    },
+                    .wire => |we| switch (we) {
+                        .start => {},
+                        .connect => |other| std.log.info("wired to {any}", .{other}),
+                        .drop => |graph_point| std.log.info("dropped at {any}", .{graph_point}),
+                    },
+                },
+            };
+        }
+        area.managedOutput(@src(), 0, "out", .{}); // shorthand for a row with just a label
+    }
+    {
+        var footer = node.footer(@src(), .{});
+        defer footer.deinit();
+        dvui.label(@src(), "below the sockets", .{}, .{});
+    }
 }
 
 // edges go after the nodes that own their sockets
@@ -80,8 +94,8 @@ for (graph.events()) |e| switch (e) {
 ```
 
 Higher level widgets expose the events of the widget it wraps through a variant of
-its own event union. e.g. `BaseInput.Event.socket` carries a `BaseSocket.Event`, which splits into
-`.mouse` and `.wire`. `BaseSocket` can also be used directly.
+its own event union. e.g. `ManagedInput.Event.socket` carries a `ManagedSocket.Event`, which splits into
+`.mouse` and `.wire`. `ManagedSocket` can also be used directly.
 
 ## Declarative API
 
@@ -91,8 +105,8 @@ const Add = ng.declarative.NodeType(struct { a: i32, b: i32 }, struct { sum: i32
 const events = ng.declarative.graph(@src(), &app, .{
     .nodes = &.{ Add.nodeAt(1, "add", .{ .x = 20, .y = 20 }), Add.node(2, "add") },
     .edges = &.{.{ .source = .output(1, 0), .target = .input(2, 0) }},
-    .draw_input_label = App.drawInputLabel, // fn (*App, *ng.BaseInput, ng.declarative.Node, []const u8) void
-    .on_click_socket = App.onClickSocket, // fn (*App, ng.SocketId, ng.BaseSocket.Click) void
+    .draw_input_label = App.drawInputLabel, // fn (*App, *ng.ManagedInput, ng.declarative.Node, []const u8) void
+    .on_click_socket = App.onClickSocket, // fn (*App, ng.SocketId, ng.ManagedSocket.Click) void
     .on_event = App.onEvent, // fn (*App, ng.GraphWidget.Event) void
 }, .{});
 ```

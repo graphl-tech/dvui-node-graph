@@ -81,9 +81,20 @@ const plus_socket: ng.Style.Socket = .{
 
 const letters = [_][]const u8{ "a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m", "n", "o", "p", "q", "r", "s", "t", "u", "v", "w", "x", "y", "z" };
 
-fn inputsOf(n: *const Node) !ng.Sockets {
+/// One side's socket rows, in socket order.
+const Rows = struct {
+    names: []const []const u8 = &.{},
+    /// Shorter than `names` to use the graph's style for the rest.
+    styles: []const ?ng.Style.Socket = &.{},
+
+    fn style(self: Rows, i: usize) ?ng.Style.Socket {
+        return if (i < self.styles.len) self.styles[i] else null;
+    }
+};
+
+fn inputsOf(n: *const Node) !Rows {
     return switch (n.kind) {
-        .number => .none(.input),
+        .number => .{},
         .add => blk: {
             const arena = dvui.currentWindow().arena();
             const count = @min(n.arity, letters.len);
@@ -95,9 +106,9 @@ fn inputsOf(n: *const Node) !ng.Sockets {
             }
             names[count] = "";
             styles[count] = plus_socket;
-            break :blk .{ .side = .input, .names = names, .styles = styles };
+            break :blk .{ .names = names, .styles = styles };
         },
-        .print => .{ .side = .input, .names = &.{ "exec", "value" }, .styles = &.{flow_socket} },
+        .print => .{ .names = &.{ "exec", "value" }, .styles = &.{flow_socket} },
     };
 }
 
@@ -121,10 +132,10 @@ fn addEdge(edge: ng.Edge) !void {
     if (!hasEdge(edge)) try edges.append(gpa, edge);
 }
 
-fn outputsOf(kind: Kind) ng.Sockets {
+fn outputsOf(kind: Kind) Rows {
     return switch (kind) {
-        .number, .add => comptime ng.socketsOfType(struct { value: f32 }, .output),
-        .print => .{ .side = .output, .names = &.{"then"}, .styles = &.{flow_socket} },
+        .number, .add => .{ .names = &.{"value"} },
+        .print => .{ .names = &.{"then"}, .styles = &.{flow_socket} },
     };
 }
 
@@ -162,38 +173,54 @@ fn imperativeGraph() !void {
     defer graph.deinit();
 
     for (nodes.items) |*n| {
-        var node = graph.node(@src(), n.id, &n.position, .{ .title = @tagName(n.kind) }, .{});
+        var node = graph.node(@src(), n.id, &n.position, .{}, .{});
         defer node.deinit();
 
-        const ins = try inputsOf(n);
-        for (ins.names, 0..) |name, i| {
-            var row = ng.BaseInput.initEx(@src(), node, i, .{ .socket = .{ .style = ins.style(i) } }, .{ .id_extra = i });
-            defer row.deinit();
-            dvui.label(@src(), "{s}", .{name}, .{});
-
-            for (row.events()) |e| switch (e) {
-                .socket => |se| switch (se) {
-                    // clicking a connected input disconnects it
-                    .mouse => |me| switch (me) {
-                        .click => removeEdgesAt(row.socketId()),
-                        else => {},
-                    },
-                    else => {},
-                },
-            };
+        {
+            var header = node.header(@src(), .{});
+            defer header.deinit();
+            dvui.label(@src(), "{s}", .{@tagName(n.kind)}, .{});
         }
 
-        if (n.kind == .number) {
-            var row = ng.BaseOutput.init(@src(), node, 0, .{});
-            defer row.deinit();
-            _ = dvui.textEntryNumber(@src(), f32, .{ .value = &n.value }, (dvui.Options{ .gravity_y = 0.5 }));
-        } else {
-            const outs = outputsOf(n.kind);
-            for (outs.names, 0..) |name, i| {
-                var row = ng.BaseOutput.initEx(@src(), node, i, .{ .socket = .{ .style = outs.style(i) } }, .{ .id_extra = i });
+        {
+            var area = node.socketArea(@src(), .{});
+            defer area.deinit();
+
+            const ins = try inputsOf(n);
+            for (ins.names, 0..) |name, i| {
+                var row = ng.ManagedInput.initEx(@src(), area, i, .{ .socket = .{ .style = ins.style(i) } }, .{ .id_extra = i });
                 defer row.deinit();
                 dvui.label(@src(), "{s}", .{name}, .{});
+
+                for (row.events()) |e| switch (e) {
+                    .socket => |se| switch (se) {
+                        // clicking a connected input disconnects it
+                        .mouse => |me| switch (me) {
+                            .click => removeEdgesAt(row.socketId()),
+                            else => {},
+                        },
+                        else => {},
+                    },
+                };
             }
+
+            if (n.kind == .number) {
+                var row = ng.ManagedOutput.init(@src(), area, 0, .{});
+                defer row.deinit();
+                _ = dvui.textEntryNumber(@src(), f32, .{ .value = &n.value }, (dvui.Options{ .gravity_y = 0.5 }));
+            } else {
+                const outs = outputsOf(n.kind);
+                for (outs.names, 0..) |name, i| {
+                    var row = ng.ManagedOutput.initEx(@src(), area, i, .{ .socket = .{ .style = outs.style(i) } }, .{ .id_extra = i });
+                    defer row.deinit();
+                    dvui.label(@src(), "{s}", .{name}, .{});
+                }
+            }
+        }
+        {
+            var footer = node.footer(@src(), .{});
+            defer footer.deinit();
+            dvui.label(@src(), "FOOTER", .{}, .{});
         }
     }
 
@@ -245,8 +272,8 @@ fn declarativeGraph() !void {
     for (nodes.items, decl_nodes) |*n, *d| d.* = .{
         .id = n.id,
         .title = @tagName(n.kind),
-        .inputs = try inputsOf(n),
-        .outputs = outputsOf(n.kind),
+        .inputs = (try inputsOf(n)).names,
+        .outputs = outputsOf(n.kind).names,
         .position = n.position,
     };
     _ = ng.declarative.graph(@src(), Ctx{}, .{
