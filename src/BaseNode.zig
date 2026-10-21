@@ -43,12 +43,12 @@ body: dvui.BoxWidget = undefined,
 column: dvui.BoxWidget = undefined,
 column_side: ?types.Side = null,
 
-/// `position` is the node's top-left corner in graph space. It must outlive the frame: dragging
-/// the node writes through it.
 pub fn init(
     src: std.builtin.SourceLocation,
     graph: *GraphWidget,
     id: NodeId,
+    /// `position` is the node's top-left corner in graph space, provided by caller,
+    /// and we might write through it
     position: *dvui.Point,
     inputs: anytype,
     outputs: anytype,
