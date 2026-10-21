@@ -80,8 +80,9 @@ pub const Edge = struct {
     }
 };
 
-/// The input or the output sockets of one node, as a struct of arrays. `names` sets the socket
-/// count; every other column is optional and may be left empty to use its default for all sockets.
+/// The input or the output sockets of one node.
+/// Socket count is derived from `names`, other slices
+/// can have less entries to use a default.
 pub const Sockets = struct {
     side: Side,
     names: []const []const u8 = &.{},
@@ -91,6 +92,7 @@ pub const Sockets = struct {
     /// Per-socket look (icons, ...); null uses the graph's `style.socket`.
     styles: []const ?Style.Socket = &.{},
 
+    // TODO: rename to empty, maybe empty_input and empty_output instead of .empty(.input)
     pub fn none(side: Side) Sockets {
         return .{ .side = side };
     }
