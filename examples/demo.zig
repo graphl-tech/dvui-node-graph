@@ -106,7 +106,7 @@ fn nodeById(id: ng.NodeId) ?*Node {
     return null;
 }
 
-/// Grow an `add` node so that its input `index` exists.
+/// If necessary, grow an `add` node so that its input `index` exists.
 fn ensureInput(s: ng.SocketId) void {
     if (s.side() != .input) return;
     const n = nodeById(s.node) orelse return;

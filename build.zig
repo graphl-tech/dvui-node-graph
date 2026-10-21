@@ -32,7 +32,7 @@ fn devSteps(b: *std.Build) void {
         b.getInstallStep().dependOn(&install.step);
         const run = b.addRunArtifact(demo);
         run.step.dependOn(&install.step);
-        if (b.args) |args| run.addArgs(args);
+        run.addPassthruArgs();
         demo_step.dependOn(&run.step);
     }
 
@@ -66,11 +66,11 @@ fn devSteps(b: *std.Build) void {
 
 const Backend = struct {
     target: std.Build.ResolvedTarget,
-    optimize: std.builtin.OptimizeMode,
+    optimize: std.builtin.Optimize,
     dvui: *std.Build.Module,
     lib: *std.Build.Module,
 
-    fn init(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode, dvui: *std.Build.Module) Backend {
+    fn init(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.Optimize, dvui: *std.Build.Module) Backend {
         const lib = b.createModule(.{
             .root_source_file = b.path("src/dvui_node_graph.zig"),
             .target = target,

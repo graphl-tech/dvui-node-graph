@@ -21,6 +21,7 @@ const dvui = @import("dvui");
 
 const types = @import("types.zig");
 const draw = @import("draw.zig");
+const drag = @import("drag.zig");
 const BaseNode = @import("BaseNode.zig");
 const BaseSocket = @import("BaseSocket.zig");
 const Style = @import("Style.zig");
@@ -355,7 +356,7 @@ fn processNodeDrag(self: *GraphWidget) void {
         if (me.action != .motion) continue;
         if (e.target_widgetId != nd.capture_id) continue;
         e.handle(@src(), self.box.data());
-        if (dvui.dragging(me.p, node_drag_name)) |dps| {
+        if (drag.dragging(me, node_drag_name)) |dps| {
             const delta: dvui.Point = .{ .x = dps.x / self.data_rs.s, .y = dps.y / self.data_rs.s };
             self.node_drag_delta = self.node_drag_delta.plus(delta);
             nd.total = nd.total.plus(delta);
@@ -384,7 +385,7 @@ fn processWire(self: *GraphWidget) void {
             .motion => {
                 e.handle(@src(), wd);
                 if (self.state.press) |p| {
-                    if (dvui.dragging(me.p, wire_drag_name) != null) {
+                    if (drag.dragging(me, wire_drag_name) != null) {
                         self.state.wire = .{ .source = p.socket, .start = p.pt };
                         self.state.wire_target = null;
                         self.state.press = null;
@@ -397,7 +398,7 @@ fn processWire(self: *GraphWidget) void {
             .release => if (me.button.pointer()) {
                 e.handle(@src(), wd);
                 dvui.captureMouse(null, e.num);
-                dvui.dragEnd();
+                drag.end(me.button);
                 dvui.refresh(null, @src(), wd.id);
                 if (self.state.wire) |w| {
                     self.state.wire = null;
@@ -577,7 +578,7 @@ pub fn canLink(self: *const GraphWidget, a: SocketId, b: SocketId) bool {
 /// True when no drag interaction is in progress.
 pub fn idle(self: *GraphWidget) bool {
     return self.state.press == null and self.state.wire == null and self.state.node_drag == null and
-        self.state.box_select == null and dvui.currentWindow().dragging.state == .none;
+        self.state.box_select == null and drag.none();
 }
 
 /// Node under physical point `p` among nodes declared so far this frame.
@@ -650,7 +651,7 @@ pub fn events(self: *GraphWidget) []const Event {
 
 /// Debug builds panic when a node or link is declared after `events()` this frame.
 pub fn assertCanDeclare(self: *const GraphWidget) void {
-    if (builtin.mode == .Debug and self.events_called) {
+    if (builtin.mode == .debug and self.events_called) {
         @panic("can't draw new nodes or links after graph.events() or some events may be missed");
     }
 }
@@ -925,11 +926,11 @@ fn processCanvasMouse(self: *GraphWidget, e: *dvui.Event, me: dvui.Event.Mouse) 
             e.handle(@src(), wd);
             if (self.state.box_select != null) {
                 self.state.box_select = null;
-            } else if (dvui.dragging(me.p, pan_drag_name) == null) {
+            } else if (drag.dragging(me, pan_drag_name) == null) {
                 self.clearSelection();
             }
             dvui.captureMouse(null, e.num);
-            dvui.dragEnd();
+            drag.end(me.button);
             dvui.refresh(null, @src(), wd.id);
         },
         .motion => if (dvui.captured(wd.id)) {
@@ -939,7 +940,7 @@ fn processCanvasMouse(self: *GraphWidget, e: *dvui.Event, me: dvui.Event.Mouse) 
                 self.applyBoxSelect(bs.*);
                 dvui.refresh(null, @src(), wd.id);
             } else if (self.init_opts.pan) {
-                if (dvui.dragging(me.p, pan_drag_name)) |dps| {
+                if (drag.dragging(me, pan_drag_name)) |dps| {
                     self.view.origin.x -= dps.x / self.data_rs.s;
                     self.view.origin.y -= dps.y / self.data_rs.s;
                     dvui.cursorSet(.hand);

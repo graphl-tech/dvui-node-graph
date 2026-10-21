@@ -8,6 +8,7 @@ const dvui = @import("dvui");
 const types = @import("types.zig");
 const GraphWidget = @import("GraphWidget.zig");
 const draw = @import("draw.zig");
+const drag = @import("drag.zig");
 const Style = @import("Style.zig");
 const socket_row = @import("socket_row.zig");
 
@@ -154,7 +155,7 @@ pub fn beginColumn(self: *BaseNode, side: types.Side) void {
     }
     self.column.init(@src(), .{ .dir = .vertical }, .{
         .gravity_x = if (side == .output) 1 else 0,
-        .id_extra = @intFromEnum(side),
+        .id_extra = @backingInt(side),
     });
     self.column_side = side;
 }
@@ -224,7 +225,7 @@ fn processEvents(self: *BaseNode) void {
             .release => if (me.button.pointer() and dvui.captured(wd.id)) {
                 e.handle(@src(), wd);
                 dvui.captureMouse(null, e.num);
-                dvui.dragEnd();
+                drag.end(me.button);
                 const moved = graph.endNodeDrag();
                 // A plain click on one node of a multi-selection narrows to that node.
                 if (!moved and self.init_opts.selectable and !me.mod.shift() and !me.mod.matchBind("ctrl/cmd")) {

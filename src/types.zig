@@ -135,10 +135,10 @@ pub fn sockets(comptime side: Side, from: anytype) Sockets {
 /// Sockets named after the fields of a struct type. Usable at comptime.
 pub fn socketsOfType(comptime T: type, comptime side: Side) Sockets {
     const S = struct {
-        const fields = @typeInfo(T).@"struct".fields;
+        const field_names = @typeInfo(T).@"struct".field_names;
         const names = blk: {
-            var out: [fields.len][]const u8 = undefined;
-            for (fields, 0..) |f, i| out[i] = f.name;
+            var out: [field_names.len][]const u8 = undefined;
+            for (field_names, 0..) |n, i| out[i] = n;
             const final = out;
             break :blk final;
         };
