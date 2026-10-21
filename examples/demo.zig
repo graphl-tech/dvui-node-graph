@@ -233,7 +233,49 @@ fn drawGraph() !void {
 
     for (edges.items) |e| _ = graph.link(e.source.node, e.source.socket, e.target.node, e.target.socket);
 
-    for (graph.events()) |e| try handleEvent(e);
+    for (graph.events()) |e| {
+        switch (e) {
+            .link_created => |edge| try addEdge(edge),
+            .socket_clicked => |s| ensureInput(s),
+            .link_clicked => |edge| for (edges.items, 0..) |x, i| if (x.eql(edge)) {
+                _ = edges.orderedRemove(i);
+                break;
+            },
+            .link_dropped => |drop| {
+                const id = try addNode(.{ .add = .{} }, drop.point);
+                try addEdge(ng.Edge.normalized(drop.source, if (drop.source.side() == .output) .input(id, 0) else .output(id, 0)));
+            },
+            .select => |sel| for (nodes.items) |*n| switch (sel.mode) {
+                .replace => n.selected = n.id == sel.node,
+                .add => if (n.id == sel.node) {
+                    n.selected = true;
+                },
+                .remove => if (n.id == sel.node) {
+                    n.selected = false;
+                },
+            },
+            .select_all => for (nodes.items) |*n| {
+                n.selected = true;
+            },
+            .deselect_all => for (nodes.items) |*n| {
+                n.selected = false;
+            },
+            .box_select => |b| for (nodes.items) |*n| {
+                if (std.mem.indexOfScalar(ng.NodeId, b.nodes, n.id) != null) n.selected = b.mode == .include;
+            },
+            .delete_selection => {
+                var i = nodes.items.len;
+                while (i > 0) {
+                    i -= 1;
+                    if (nodes.items[i].selected) removeNode(nodes.items[i].id);
+                }
+            },
+            .context_menu => |cm| if (cm.target == .canvas) {
+                _ = try addNode(.{ .number = .{} }, cm.point);
+            },
+            else => {},
+        }
+    }
 }
 
 fn removeEdgesAt(s: ng.SocketId) void {
@@ -241,49 +283,5 @@ fn removeEdgesAt(s: ng.SocketId) void {
     while (i < edges.items.len) {
         const e = edges.items[i];
         if (e.source.eql(s) or e.target.eql(s)) _ = edges.orderedRemove(i) else i += 1;
-    }
-}
-
-fn handleEvent(e: ng.GraphWidget.Event) !void {
-    switch (e) {
-        .link_created => |edge| try addEdge(edge),
-        .socket_clicked => |s| ensureInput(s),
-        .link_clicked => |edge| for (edges.items, 0..) |x, i| if (x.eql(edge)) {
-            _ = edges.orderedRemove(i);
-            break;
-        },
-        .link_dropped => |drop| {
-            const id = try addNode(.{ .add = .{} }, drop.point);
-            try addEdge(ng.Edge.normalized(drop.source, if (drop.source.side() == .output) .input(id, 0) else .output(id, 0)));
-        },
-        .select => |sel| for (nodes.items) |*n| switch (sel.mode) {
-            .replace => n.selected = n.id == sel.node,
-            .add => if (n.id == sel.node) {
-                n.selected = true;
-            },
-            .remove => if (n.id == sel.node) {
-                n.selected = false;
-            },
-        },
-        .select_all => for (nodes.items) |*n| {
-            n.selected = true;
-        },
-        .deselect_all => for (nodes.items) |*n| {
-            n.selected = false;
-        },
-        .box_select => |b| for (nodes.items) |*n| {
-            if (std.mem.indexOfScalar(ng.NodeId, b.nodes, n.id) != null) n.selected = b.mode == .include;
-        },
-        .delete_selection => {
-            var i = nodes.items.len;
-            while (i > 0) {
-                i -= 1;
-                if (nodes.items[i].selected) removeNode(nodes.items[i].id);
-            }
-        },
-        .context_menu => |cm| if (cm.target == .canvas) {
-            _ = try addNode(.{ .number = .{} }, cm.point);
-        },
-        else => {},
     }
 }

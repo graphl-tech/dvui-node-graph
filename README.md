@@ -30,6 +30,7 @@ ng_mod.addImport("dvui", dvui_module);
 
 - zoomable, pannable graph with grid
 - imperative API with managed and unmanaged widgets for your chosen level of flexibility
+- imperative selection management
 - positive and negative box select
 
 ## Example
