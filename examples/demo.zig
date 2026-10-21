@@ -162,7 +162,7 @@ fn imperativeGraph() !void {
     defer graph.deinit();
 
     for (nodes.items) |*n| {
-        var node = graph.node(@src(), n.id, &n.position, .{ .title = @tagName(n.kind) }, .{});
+        var node = graph.emptyNode(@src(), n.id, &n.position, .{ .title = @tagName(n.kind) }, .{});
         defer node.deinit();
 
         const ins = try inputsOf(n);

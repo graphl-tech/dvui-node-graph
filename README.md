@@ -39,7 +39,7 @@ graph.managedNode(@src(), 1, &positions[0], .{ .side = .input, .names = &.{"x"} 
 
 // node that draws its own socket rows; its sockets are whatever rows it declares
 {
-    var node = graph.node(@src(), 2, &positions[1], .{ .title = "two" }, .{});
+    var node = graph.emptyNode(@src(), 2, &positions[1], .{ .title = "two" }, .{});
     defer node.deinit();
 
     for (input_names, 0..) |name, i| {

@@ -2,7 +2,7 @@
 //!
 //! Usage per frame:
 //!   1. `GraphWidget.init` (or `dvui_node_graph.graph`)
-//!   2. declare nodes (`node`/`managedNode`) - each node lays out its sockets
+//!   2. declare nodes (`emptyNode`/`managedNode`) - each node lays out its sockets
 //!   3. declare edges with `link` (after nodes, so socket positions are known)
 //!   4. optionally read `events()`
 //!   5. `deinit`
@@ -449,7 +449,7 @@ fn queueSocketEvent(self: *GraphWidget, s: SocketId, e: BaseSocket.Event) void {
 
 /// Begin a node at `position` (graph space, written by drags). Its sockets are the rows the
 /// caller declares (see `BaseInput`/`BaseOutput`); the caller must `deinit` it.
-pub fn node(self: *GraphWidget, src: std.builtin.SourceLocation, node_id: NodeId, position: *dvui.Point, init_opts: BaseNode.InitOptions, opts: dvui.Options) *BaseNode {
+pub fn emptyNode(self: *GraphWidget, src: std.builtin.SourceLocation, node_id: NodeId, position: *dvui.Point, init_opts: BaseNode.InitOptions, opts: dvui.Options) *BaseNode {
     return BaseNode.init(src, self, node_id, position, init_opts, opts);
 }
 

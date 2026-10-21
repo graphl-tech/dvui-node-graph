@@ -45,7 +45,7 @@ fn imperativeFrame() anyerror!dvui.App.Result {
     defer graph.deinit();
 
     {
-        var node = graph.node(@src(), 1, &fx.node1_pos, .{ .title = "one" }, .{ .tag = "node-1" });
+        var node = graph.emptyNode(@src(), 1, &fx.node1_pos, .{ .title = "one" }, .{ .tag = "node-1" });
         defer node.deinit();
         node.baseInput(@src(), 0, "x", .{});
         var row = ng.BaseOutput.initEx(@src(), node, 0, .{ .socket_opts = .{ .tag = "out-1-0" } }, .{});
@@ -58,7 +58,7 @@ fn imperativeFrame() anyerror!dvui.App.Result {
     }, .{ .tag = "node-3" });
 
     {
-        var node = graph.node(@src(), 2, &fx.node2_pos, .{ .title = "two" }, .{ .tag = "node-2" });
+        var node = graph.emptyNode(@src(), 2, &fx.node2_pos, .{ .title = "two" }, .{ .tag = "node-2" });
         defer node.deinit();
 
         {
@@ -338,7 +338,7 @@ fn readmeFrame() anyerror!dvui.App.Result {
 
     // node that draws its own socket rows; its sockets are whatever rows it declares
     {
-        var node = graph.node(@src(), 2, &model.positions[1], .{ .title = "two" }, .{});
+        var node = graph.emptyNode(@src(), 2, &model.positions[1], .{ .title = "two" }, .{});
         defer node.deinit();
 
         for (model.input_names, 0..) |name, i| {
@@ -415,14 +415,14 @@ const PlusFixture = struct {
         defer graph.deinit();
 
         {
-            var node = graph.node(@src(), 1, &positions[0], .{}, .{ .tag = "pn-1" });
+            var node = graph.emptyNode(@src(), 1, &positions[0], .{}, .{ .tag = "pn-1" });
             defer node.deinit();
             var row = ng.BaseOutput.initEx(@src(), node, 0, .{ .socket_opts = .{ .tag = "pn-out" } }, .{});
             defer row.deinit();
             dvui.label(@src(), "out", .{}, .{});
         }
         {
-            var node = graph.node(@src(), 2, &positions[1], .{}, .{ .tag = "pn-2" });
+            var node = graph.emptyNode(@src(), 2, &positions[1], .{}, .{ .tag = "pn-2" });
             defer node.deinit();
             node.baseInput(@src(), 0, "a", .{});
             // floats left of the card, not part of the layout
