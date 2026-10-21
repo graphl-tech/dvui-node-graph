@@ -1,7 +1,7 @@
 # dvui-node-graph
 
 Node graph editor widgets for [dvui](https://github.com/david-vanderson/dvui)
-Has both an imperative and a declarative API.
+Developed for [graphl](https://graphl.tech/demo).
 
 This branch is for zig 0.16
 
@@ -26,7 +26,13 @@ const ng_mod = b.dependency("dvui_node_graph", .{}).module("dvui_node_graph");
 ng_mod.addImport("dvui", dvui_module);
 ```
 
-## Imperative API
+## Features
+
+- zoomable, pannable graph with grid
+- imperative API with managed and unmanaged widgets for your chosen level of flexibility
+- positive and negative box select
+
+## Example
 
 ```zig
 const ng = @import("dvui_node_graph");
@@ -96,6 +102,8 @@ for (graph.events()) |e| switch (e) {
     .link_dropped => {}, // wire released on empty canvas, `.point` is graph space
     .link_clicked => {},
     .nodes_moved => {}, // `.nodes` moved by `.delta`
+    // the selection is yours: update it here and pass each node `.selected`
+    .select, .select_all, .deselect_all, .box_select => {},
     .delete_selection => {},
     .context_menu => {}, // right click on canvas/node/socket
     else => {},
@@ -105,22 +113,6 @@ for (graph.events()) |e| switch (e) {
 Higher level widgets expose the events of the widget it wraps through a variant of
 its own event union. e.g. `ManagedInput.Event.socket` carries a `ManagedSocket.Event`, which splits into
 `.mouse` and `.wire`. `ManagedSocket` can also be used directly.
-
-## Declarative API
-
-```zig
-const Add = ng.declarative.NodeType(struct { a: i32, b: i32 }, struct { sum: i32 });
-
-const events = ng.declarative.graph(@src(), &app, .{
-    .nodes = &.{ Add.nodeAt(1, "add", .{ .x = 20, .y = 20 }), Add.node(2, "add") },
-    .edges = &.{.{ .source = .output(1, 0), .target = .input(2, 0) }},
-    .draw_input_label = App.drawInputLabel, // fn (*App, *ng.ManagedInput, ng.declarative.Node, []const u8) void
-    .on_click_socket = App.onClickSocket, // fn (*App, ng.SocketId, ng.ManagedSocket.Click) void
-    .on_event = App.onEvent, // fn (*App, ng.GraphWidget.Event) void
-}, .{});
-```
-
-The first argument after `@src()` is a context passed to every callback, and it can be any type.
 
 ## Development
 
