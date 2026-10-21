@@ -3,18 +3,27 @@
 Node graph editor widgets for [dvui](https://github.com/david-vanderson/dvui)
 Has both an imperative and a declarative API.
 
-Built for zig 0.16. The `dvui_node_graph` module brings no dvui of its own; give it yours:
+This branch is for zig 0.16
+
+> [!WARNING]
+> Generative AI was used to produce large portions of the code.
+> Every line and comment was verified by a human.
+
+## Using in your project
+
+Add this project as a dependency:
+
+```sh
+zig fetch --save=dvui_node_graph 'git+https://github.com/graphl-tech/dvui-node-graph#master'
+```
+
+To use `dvui_node_graph`, you must provide your dvui import. Ensure it is compatible with
+the DVUI version that we test under:
 
 ```zig
 const ng_mod = b.dependency("dvui_node_graph", .{}).module("dvui_node_graph");
 // you must add your own DVUI import
 ng_mod.addImport("dvui", dvui_module);
-```
-
-```sh
-zig build demo          # interactive SDL3 demo
-zig build test          # unit tests + headless interaction tests
-zig build test-images   # same tests on SDL3, writes PNGs to snapshots/images
 ```
 
 ## Imperative API
@@ -53,7 +62,7 @@ graph.managedNodeEx(@src(), 1, &positions[0], struct { x: f32 }, struct { s: []c
         for (input_names, 0..) |name, i| {
             var row = ng.ManagedInput.init(@src(), area, i, .{ .id_extra = i }); // socket .input(i)
             defer row.deinit();
-            // anything drawn here lands next to the socket
+            // anything drawn here is next to the socket
             dvui.label(@src(), "{s}", .{name}, .{});
 
             for (row.events()) |e| switch (e) {
@@ -70,7 +79,7 @@ graph.managedNodeEx(@src(), 1, &positions[0], struct { x: f32 }, struct { s: []c
                 },
             };
         }
-        area.managedOutput(@src(), 0, "out", .{}); // shorthand for a row with just a label
+        area.managedOutput(@src(), 0, "out", .{}); // shorthand for a output with just a label
     }
     {
         var footer = node.footer(@src(), .{});
@@ -112,3 +121,11 @@ const events = ng.declarative.graph(@src(), &app, .{
 ```
 
 The first argument after `@src()` is a context passed to every callback, and it can be any type.
+
+## Development
+
+```sh
+zig build demo          # interactive SDL3 demo (./examples/demo.zig)
+zig build test          # tests
+zig build test-images   # tests but writes snapshot PNGs to snapshots/images
+```

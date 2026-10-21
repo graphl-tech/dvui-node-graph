@@ -1,19 +1,9 @@
 //! Pannable, zoomable node-graph canvas.
-//!
-//! Usage per frame:
-//!   1. `GraphWidget.init` (or `dvui_node_graph.graph`)
-//!   2. declare nodes (`node`/`managedNode`)
-//!   3. declare edges with `link` (after nodes, so socket positions are known)
-//!   4. optionally read `events()`
-//!   5. `deinit`
+//! See README.md for usage
 //!
 //! Each node's position is passed in by pointer. The view transform and the selection persist in
 //! dvui's data store keyed by this widget's id unless the caller owns them
 //! (`InitOptions.view`, `InitOptions.selection`).
-//!
-//! Wire drags belong to the graph rather than to a socket widget: pressing a socket captures the
-//! mouse to the canvas, so the drag survives the pressed widget disappearing (see
-//! `pressSocket`).
 
 const std = @import("std");
 const builtin = @import("builtin");

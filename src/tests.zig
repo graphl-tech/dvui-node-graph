@@ -576,14 +576,14 @@ test "demo: the add node's + adds inputs" {
     // node 3 is the add node, starting with inputs a and b; its "+" is input 2
     const gid = dvui.tagGet("demo-graph").?.id;
     const cw = dvui.currentWindow();
-    try std.testing.expectEqual(2, demoNode(3).arity);
+    try std.testing.expectEqual(2, demoNode(3).kind.add.arity);
 
     // clicking the + adds an input
     _ = try cw.addEventMouseMotion(.{ .pt = ng.GraphWidget.lastFrameSocket(gid, .input(3, 2)).?.center });
     _ = try dvui.testing.step(demoFrame);
     try dvui.testing.click(.left);
     try dvui.testing.settle(demoFrame);
-    try std.testing.expectEqual(3, demoNode(3).arity);
+    try std.testing.expectEqual(3, demoNode(3).kind.add.arity);
 
     // wiring a number into the new + adds another input, linked
     const from = ng.GraphWidget.lastFrameSocket(gid, .output(1, 0)).?.center;
@@ -598,7 +598,7 @@ test "demo: the add node's + adds inputs" {
     }
     _ = try cw.addEventMouseButton(.left, .release);
     try dvui.testing.settle(demoFrame);
-    try std.testing.expectEqual(4, demoNode(3).arity);
+    try std.testing.expectEqual(4, demoNode(3).kind.add.arity);
     var linked = false;
     for (demo.edges.items) |e| linked = linked or e.eql(.{ .source = .output(1, 0), .target = .input(3, 3) });
     try std.testing.expect(linked);
